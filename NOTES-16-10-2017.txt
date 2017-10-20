@@ -1,0 +1,30 @@
+segments.py
+***********
+Added getPromptsLocally so that we can run getPrompts on all the
+individual directories from the GALE data and save the results in a
+set of directories inside <dest>, e.g.
+
+>>> getPromptsLocally(dest="XXX", runMadamira=True, N=1000)
+
+will copy 1000 segments from the standard GALE location
+(i.e.'/Users/ramsay/ASIM/DATASETS/gale_p3_ara_bn_transcripts_p1/data/tdf'
+for me, somewhere else for you) into a set of directories inside XXX.
+
+On the way, I fixed getPrompts so it used the right directory for the
+source when running Madamira.
+
+mada.py
+*******
+Fixed it so that we calculate all the things we want to know about
+unknowns in one place (getUnknowns, getAllUnknowns) and write them
+somewhere else (saveUnknowns). Previous version did both in one place,
+which is always a bad idea.
+
+""" 
+Get all the unknowns in all the directories that you just created in XXX
+"""
+>>> madaunknowns, samaunknowns, sentences = getAllUnknowns("XXX")
+"""
+Save the result of doing that in "unknowns.csv"
+"""
+>>> saveUnknowns(madaunknowns, samaunknowns, out="unknowns.csv")

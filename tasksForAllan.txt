@@ -1,0 +1,33 @@
+Make sure it all runs
+
+Package madamira up so we can call it as part of a script
+
+Write README.tx
+
+Find counts of unknown word types and unknown word tokens for SAMA
+(and MADAMIRA, but surely they'll be the same). Optionally, generated
+.csv file contains only unrecognised words, and actually contains them
+each one with a count rather than lots of times.
+
+We can't use segments to generate one great big file, because MADAMIRA
+can't cope with great big files. But if we generate one file per GALE
+datafile, then our search for unknown words has to recursively scan
+each of these.
+
+Fix SAMA so that it tries W and I for unrecognised words that start
+with A or AlA (or wAlA, but no others). (make that optional, then Iman
+can decide: in the HTK script, we might want to try SAMA by itself, in
+which case letting it fail on these cases is fine, but if we're using
+it in support of MADAMIRA then it would be silly not to let it get
+these ones right).
+
+What is a dash? Make it a short pause? But we'll have to make sure
+that it gets treated properly (i.e. left untouched) by the
+assimilation rules.
+
+
+Extract results as .csv so we can plot graphs
+
+Make segments look for gender
+
+

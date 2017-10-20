@@ -1,0 +1,7 @@
+The best results come when we don't do any diacriticisation. Yik yuk
+yuk.
+
+(i) do PYA-based diacriticisation, leave non-PYA words
+undiacricised. When it's all done, get segments that are
+PYA-diacriticised and are correct. Retrain on them.
+
