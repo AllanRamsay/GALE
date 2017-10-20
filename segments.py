@@ -12,14 +12,14 @@ We want segments transliterated using old-style Buckwalter, because
 we're going to feed them to PYA, which doesn't want new-style
 """
 
-DATASETS = "/Users/ramsay/ASIM/DATASETS"
-TDF = os.path.join(DATASETS, "gale_p3_ara_bn_transcripts_p1/data/tdf")
-WAV = os.path.join(DATASETS, "gale_p3_bn_speech_p1/data")
+HERE = os.getcwd()
+MADAMIRAHOME = HERE
+TDF = os.path.join(HERE, "gale_p3_ara_bn_transcripts_p1/data/tdf")
+WAV = os.path.join(HERE, "gale_p3_bn_speech_p1/data")
 TESTPROMPT = "SYRIANTV_NEWS25_ARB_20070403_162800.qrtr.tdf"
 
 P = re.compile("^(?P<prompt>\S*)	(?P<channel>\d+)	(?P<start>[\d.]+)	(?P<end>[\d.]+)	(?P<speaker>.*)	(?P<gender>\S*)	(?P<dialect>\S*)	(?P<transcript>.*)	(?P<section>\d+)	(?P<turn>\d+)	(?P<segment>-?\d+)	(?P<secType>\S*)(\s*(?P<uType>\S+))?$")
 
-dash = re.compile("-")
 tag = re.compile("<\S*>")
 respace = re.compile("\s+")
 brackets = re.compile("\(|\)|=|\+")
@@ -50,14 +50,10 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
                 N -= 1
                 if N == 0:
                     break
+                print i, line
                 transcript = m.group("transcript").decode("UTF-8")
                 if useBW:
                     transcript = a2bw.convert(transcript, buck._uni2buck)
-                """
-                Don't delete dashes: they are some sort of hesitationy sound,
-                but more than that if we delete them we will get something which
-                we will try to assimilate but shouldn't.
-                """
                 transcript = respace.sub(" ", brackets.sub("", tag.sub("", transcript)))
                 s = [m.group("prompt"), float(m.group("start")), float(m.group("end")), transcript]
                 test ="test-%s-%s"%(prompt, i)
@@ -89,7 +85,7 @@ def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", promptsfile="orig
         out = os.path.join(dest, promptsfile)
     saveprompts(prompts, out)
     if runMadamira:
-        runmadamira(src="../%s"%(dest), dest="../%s"%(dest))
+        runmadamira(src=dest, dest=dest)
     return N
 
 def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=True, useBW=False, out=False, runMadamira=False, N=sys.maxint):
@@ -101,7 +97,7 @@ def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=True, useBW=False, out=Fa
             except:
                 pass
             N = getPrompts(src=os.path.join(src, f0), dest=f1, rawPrompts=rawPrompts, useBW=useBW, runMadamira=runMadamira, N=N)
-            if N < 0:
+            if N <= 0:
                 return
 
 def tdf2bw(ifile=os.path.join(TDF, TESTPROMPT)):
@@ -110,6 +106,7 @@ def tdf2bw(ifile=os.path.join(TDF, TESTPROMPT)):
         s = a2bw.convert(s.decode("UTF-8"))
         write(s)
 
-def runmadamira(madamiradir="MADAMIRA-release-20170403-2.1", src="../TEMP", dest="../TEMP"):
+def runmadamira(madamiradir=MADAMIRAHOME, src="TEMP", dest="TEMP"):
+    print "HERE %s"%(HERE)
     execute("java -Xmx2500m -Xms2500m -XX:NewRatio=3 -jar MADAMIRA-release-20170403-2.1.jar -rawinput %s/originalprompts.segments -rawoutdir %s"%(src, dest), d=madamiradir)
                     

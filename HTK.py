@@ -632,7 +632,19 @@ class MADASOLUTION:
 
     def __repr__(self):
         return "%s:%s:%s"%(str(self.form.encode("UTF-8")), str(self.diacritics), str(self.gloss))
-    
+
+def fixDashes(sentences):
+    checked = set()
+    n = 0
+    for j, sentence in enumerate(sentences):
+        for i, w in enumerate(sentence):
+            if w.form == "-":
+                n += 1
+                if sentence[i+1].form.startswith(sentence[i-1].form):
+                    print "(%s) **** %s ****"%(n, sentence[i-1:i+2])
+                else:
+                    print "(%s) %s"%(n, sentence[i-1:i+4])
+            
 def readRawMada(ifile="TEMP/originalprompts.segments.mada"):
     sentences = []
     for sentence in SPATTERN.finditer(codecs.open(ifile, encoding="UTF-8").read().strip()):
@@ -646,16 +658,6 @@ def readRawMada(ifile="TEMP/originalprompts.segments.mada"):
             diac = d.group("diac")
             """ HACK """
             b = buck.uni2buck(w)
-            if len(b) == 1: # and not b == "-":
-                continue
-            """
-            We don't like having plain "Al" transcribed as "Al" because
-            we then apply assimilation rules to it, and we shouldn't
-            """
-            if b == "Al":
-                diac = "Qalt"
-            if b == "wAl":
-                diac = "wQalt"
             try:
                 gloss = d.group("gloss")
             except:
@@ -663,6 +665,16 @@ def readRawMada(ifile="TEMP/originalprompts.segments.mada"):
             words.append(MADASOLUTION(w, diac, gloss))
         if len(words) > 3:
             sentences.append(words)
+    fixDashes(sentences)
+    return sentences
+
+def readAllRawMada(d="TEMP"):
+    sentences = []
+    for p, dirs, files in os.walk(d):
+        for f in files:
+            print f
+            if f.endswith(".mada"):
+                sentences += readRawMada(os.path.join(p, f))
     return sentences
 
 def mada2prompts(src="TEMP", dest="EXPT", promptsfile="originalprompts.segments.mada", useBW=False):

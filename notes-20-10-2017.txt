@@ -1,0 +1,76 @@
+It's not quite as simple as we thought. here are all the dashes with
+the surrounding words from a randomly chosen file (well, the first
+file, so not actually randomly chosen, but I think probably quite
+reopresentative). We were going to say that if MADAMIRA found no
+solution for the word before the dash then if it was a prefix of the
+following word then we would use the diacritics from the following one
+on the grounds that it was almost certainly a false start for the
+following word and hence would be phonetically the same. But MADAMIRA
+actually finds a solution in a very large percentage of cases. It's
+just usually the wrong solution. The ones below that are marked with
+**** are the ones where the word before the dash is a prefix of the
+following one.
+
+(2) is an example where MADAMIRA didn't recognise the preceding word
+but it was a prefix of the following one. Then (3)-(6), (8), (12) are
+places where it did think it had recognised the previous one but it
+clearly got it wrong. And then there are lots where the word before
+the dash was "Al", e.g. (7), (10), (11): for some of these the
+following word does start with "Al", for some it doesn't, but I think
+that in every case the item before the dash was intended to be "Al".
+
+There are only three out of 46 where MADAMIRA didn't think it had
+recognised the preceding word, and for two of these the preceding word
+is a prefix for the following one.
+
+So I think we say: if the preceding word is a prefix of the following
+one, whether or not MADAMIRA thinks it recognised it, we borrow the
+diacritics from the following one; and in every case we insert a short
+pause between the two.
+
+(1) [وقو:wqw:None, -:-:gloss:-, والقو:wAlqw:None, -:-:gloss:-, والقوة:waAlquw~api:gloss:power;strength]
+(2) **** [والقو:wAlqw:None, -:-:gloss:-, والقوة:waAlquw~api:gloss:power;strength] ****
+(3) **** [ل:li:gloss:for/to, -:-:gloss:-, لم:lamo:gloss:did_not] ****
+(4) **** [ل:li:gloss:for/to, -:-:gloss:-, ل:li:gloss:for/to] ****
+(5) **** [ل:li:gloss:for/to, -:-:gloss:-, ليس:layosa:gloss:not_be] ****
+(6) **** [ف:f:gloss:F.;17th;(fils), -:-:gloss:-, في:fiy:gloss:in] ****
+(7) [ال:Al:gloss:the, -:-:gloss:-, هذه:h`*ihi:gloss:this/these, المنطقة:AlminoTaqapi:gloss:area;zone;territory, الساخنة:Als~Axinapi:gloss:hot;warm]
+(8) **** [س:s:gloss:S.;15th;(question);(hour), -:-:gloss:-, سواء:sawA'F:gloss:except;whether;regardless] ****
+(9) [الق:>alaqK:gloss:brightness;brilliance, -:-:gloss:-, مع:maEa:gloss:something_with, القوة:Alquw~api:gloss:power;strength, المحتلة:AlmuHotal~api:gloss:occupying]
+(10) **** [ال:Al:gloss:the, -:-:gloss:-, ال:Al:gloss:Al] ****
+(11) **** [ال:Al:gloss:Al, -:-:gloss:-, الشهود:Al$~uhuwdu:gloss:witnesses;spectators] ****
+(12) **** [الم:>alamo:gloss:pain;suffering, -:-:gloss:-, المسالة:Almaso>alapi:gloss:issue;affair;matter;question] ****
+(13) [الع:>aluEo:gloss:be_impatient;torment, -:-:gloss:-, السياسي:Als~iyAsiy~i:gloss:political, من:min:gloss:from, غزة:gaz~apa:gloss:Gaza]
+(14) [ب:b:gloss:with;by, -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, جهود:juhuwdi:gloss:efforts, لاجل:li>ajoli:gloss:for_sake_of;because_of]
+(15) **** [است:|sat:gloss:anus, -:-:gloss:-, استفزاز:AisotifozAzK:gloss:provocation;harassment] ****
+(16) [من:min:gloss:[no_gloss], -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, ما:mA:gloss:what/which, منكن:man~ukun~a:gloss:from]
+(17) [ال:Al:gloss:the, -:-:gloss:-, بكل:bikul~i:gloss:all,_entire,_every,_whole, الطرق:AlT~uruqi:gloss:roads;ways;means;methods, ها:hA:gloss:this]
+(18) **** [وال:waAl:gloss:the, -:-:gloss:-, واله:wa>alohu:gloss:family;clan] ****
+(19) [واله:wa>alohu:gloss:family;clan, -:-:gloss:-, الحادي:AlHAdiy:gloss:first_(word_in_"11th",_"21st",_"31st",_through_"91st"), عشر:Ea$ara:gloss:ten_(in_numbers_11-19), ولكن:wal`kino:gloss:But,_however,_yet,_still,_nevertheless,_on_the_other_hand]
+(20) [ب:b:gloss:with;by, -:-:gloss:-, طبعا:TaboEAF:gloss:temperament, بالبحوث:biAlbuHuwvi:gloss:research, وال:waAl:gloss:the]
+(21) [وال:waAl:gloss:the, -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, الاشياء:Al>a$oyA'a:gloss:things, المتطلبات:AlmutaTal~abAti:gloss:requirements]
+(22) [ب:b:gloss:with;by, -:-:gloss:-, يبدون:yaboduwona:gloss:appear;seem, من:min:gloss:from, اول:>aw~ali:gloss:first]
+(23) [ال:Al:gloss:the, -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, القديم:Alqadiymi:gloss:old;ancient, ولان:wali>an~a:gloss:for_+_that]
+(24) [الز:>aluz~a:gloss:unite;connect, -:-:gloss:-, اه:|ha:gloss:moan;sigh, الطلاب:AlT~ul~Abi:gloss:students]
+(25) **** [ب:b:gloss:with;by, -:-:gloss:-, بالتزام:biAilotizAmi:gloss:commitment;obligation] ****
+(26) **** [ال:Al:gloss:the, -:-:gloss:-, ال:Al:gloss:Al] ****
+(27) **** [ال:Al:gloss:Al, -:-:gloss:-, الاعلان:Al<iEolAni:gloss:declaration;statement;announcement] ****
+(28) [لل:lil:gloss:for/to_+_the, -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, لل:lil:gloss:for/to_+_the, -:-:gloss:-]
+(29) [لل:lil:gloss:for/to_+_the, -:-:gloss:-, اه:|ha:gloss:moan;sigh, الخبر:Alxubar:gloss:news;report, ولكن:wal`kino:gloss:But,_however,_yet,_still,_nevertheless,_on_the_other_hand]
+(30) [ال:Al:gloss:the, -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, الاولي:Al>uwlaY:gloss:first, في:fiy:gloss:in]
+(31) **** [ال:Al:gloss:Al, -:-:gloss:-, القوانين:AlqawAniyni:gloss:laws;regulations;rules;statutes] ****
+(32) **** [ال:Al:gloss:the, -:-:gloss:-, الشهر:Al$~ahora:gloss:month] ****
+(33) [ل:li:gloss:for/to, -:-:gloss:-, ت:t:gloss:T.;(date);(time/timing);(died);22nd, -:-:gloss:-, الميزانيات:AlmiyzAniy~Ati:gloss:budgets]
+(34) [ت:t:gloss:T.;(date);(time/timing);(died);22nd, -:-:gloss:-, الميزانيات:AlmiyzAniy~Ati:gloss:budgets, اللي:All~ay~:gloss:bending;twisting, طرحت:TuriHat:gloss:be_submitted;be_suggested;be_proposed]
+(35) [ترد:taridu:gloss:appear;reach;arrive;come_to;be_mentioned, -:-:gloss:-, يعني:yaEoniy:gloss:mean;signify;concern, ترجع:tarojiEu:gloss:return;coming_back, التح:>alotaHi:gloss:grow_a_beard]
+(36) [التح:>alotaHi:gloss:grow_a_beard, -:-:gloss:-, بالتحديد:biAlt~aHodiydi:gloss:delimitation;specification;definition, حالة:HAlapi:gloss:condition;case;situation, الترقب:Alt~araq~ub:gloss:expectation;anticipation]
+(37) **** [ب:b:gloss:with;by, -:-:gloss:-, بين:bayona:gloss:between/among] ****
+(38) [ال:Al:gloss:the, -:-:gloss:-, اه:|ha:gloss:be_frail;be_fragile, الطلب:AlT~alabi:gloss:quest;search, والعرض:waAlEiroDi:gloss:presentation;display;review;show;offer]
+(39) [لتق:litaqi:gloss:preserve;safeguard, -:-:gloss:-, للقرار:lilqarAri:gloss:decision;resolution, في:fiy:gloss:in, عملية:Eamaliy~api:gloss:operation;mission;process]
+(40) **** [ي:y:gloss:Y.;10th, -:-:gloss:-, يراه:yarAhu:gloss:see;think;believe] ****
+(41) [لل:lil:gloss:for/to_+_the, -:-:gloss:-, المصنف:AlmuSan~afu:gloss:classified;ranked;seeded, الثالث:Alv~Alivi:gloss:third, بعد:baEoda:gloss:after]
+(42) **** [اقص:>uqoSa:gloss:cut;trim, -:-:gloss:-, اقصي:>aqoSaY:gloss:farthest;most_remote] ****
+(43) **** [بش:ba$~a:gloss:be_happy;be_playful, -:-:gloss:-, بشوطين:bi$awoTayoni:gloss:round;phase;game;half_period] ****
+(44) **** [المباد:AlmbAd:None, -:-:gloss:-, المبادرة:AlmubAdarapi:gloss:initiative;proposal] ****
+(45) **** [ب:b:gloss:with;by, -:-:gloss:-, بذات:ba*a>oti:gloss:same;self;essence] ****
+(46) [ف:f:gloss:and;so, -:-:gloss:-, يناله:yanAluhu:gloss:attain;achieve;acquire, مع:maEa:gloss:something_with, فريقه:fariyqihi:gloss:team;band;group;faction;party]
