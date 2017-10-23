@@ -715,6 +715,14 @@ def playPrompt(s, d="TEMP/wav"):
         return
     segments.sounds.play(os.path.join(d, "%s.wav"%(f)))
     
+def praatPrompt(s, d="TEMP/wav"):
+    try:
+        f = re.compile(".*(?P<fname>test-\S*).*").match(s).group("fname")
+    except:
+        print "'%s' doesn't start with the name of a prompt"%(s)
+        return
+    execute("Praat --open %s"%(os.path.join(d, "%s.wav"%(f))))
+    
 def mada2prompts(src="TEMP", dest="EXPT", promptsfile="originalprompts.segments.mada", useBW=False):
     prompts = ""
     for sentence in readRawMada(os.path.join(src, promptsfile)):
