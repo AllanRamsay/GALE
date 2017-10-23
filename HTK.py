@@ -633,17 +633,38 @@ class MADASOLUTION:
     def __repr__(self):
         return "%s:%s:%s"%(str(self.form.encode("UTF-8")), str(self.diacritics), str(self.gloss))
 
+"""
+Copy the diacritics from the following word. If you hit the next
+element of the form of the preceding one, move on. If this was the end
+of the preceding one then quit.
+"""
+
+def borrowDiacritics(w0, w1):
+    d = u""
+    b = buck.uni2buck(w0.form)
+    for i, c in enumerate(w1.diacritics):
+        d += c
+        if c == b[0]:
+            b = b[1:]
+            if b == "":
+                if len(d) == 1:
+                    try:
+                        d += w1.diacritics[i+1]
+                    except:
+                        pass
+                break
+    return d
+
 def fixDashes(sentences):
     checked = set()
     n = 0
     for j, sentence in enumerate(sentences):
         for i, w in enumerate(sentence):
             if w.form == "-":
+                w0, w1 = sentence[i-1], sentence[i+1]
                 n += 1
                 if sentence[i+1].form.startswith(sentence[i-1].form):
-                    print "(%s) **** %s ****"%(n, sentence[i-1:i+2])
-                else:
-                    print "(%s) %s"%(n, sentence[i-1:i+4])
+                    w0.diacritics = borrowDiacritics(w0, w1)
             
 def readRawMada(ifile="TEMP/originalprompts.segments.mada"):
     sentences = []
@@ -656,8 +677,6 @@ def readRawMada(ifile="TEMP/originalprompts.segments.mada"):
             d = DPATTERN.match(w.group(0))
             w = d.group("word")
             diac = d.group("diac")
-            """ HACK """
-            b = buck.uni2buck(w)
             try:
                 gloss = d.group("gloss")
             except:
@@ -677,6 +696,25 @@ def readAllRawMada(d="TEMP"):
                 sentences += readRawMada(os.path.join(p, f))
     return sentences
 
+def rawMada2Diacritics(l):
+    return [(" ").join(w.diacritics for w in s) for s in l]
+
+def containsDash(s):
+    return "-" in " ".join(s.split()[2:-1])
+
+def findDashes(rawmada):
+    for s in rawMada2Diacritics(rawmada):
+        if containsDash(s):
+            print 'playPrompt("%s")'%(s)
+
+def playPrompt(s, d="TEMP/wav"):
+    try:
+        f = re.compile(".*(?P<fname>test-\S*).*").match(s).group("fname")
+    except:
+        print "'%s' doesn't start with the name of a prompt"%(s)
+        return
+    segments.sounds.play(os.path.join(d, "%s.wav"%(f)))
+    
 def mada2prompts(src="TEMP", dest="EXPT", promptsfile="originalprompts.segments.mada", useBW=False):
     prompts = ""
     for sentence in readRawMada(os.path.join(src, promptsfile)):
@@ -788,6 +826,7 @@ def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada
             write("%s\n"%(p))
     phondict0['!ENTER'] = ['sil']
     phondict0['!EXIT'] = ['sil']
+    phondict0['-'] = ['sil']
     return phondict0, {}
                       
 def getunrecog(ifile):

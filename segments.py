@@ -41,6 +41,7 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
         prompt = src.split("/")[-1]
         if not prompt.endswith(".qrtr.tdf"):
             return N, prompts
+        print prompt
         prompt = prompt[:-len(".qrtr.tdf")]
         if copywavfiles:
             sound = sounds.readsound(os.path.join(wav, "%s.wav"%(prompt)))
@@ -50,7 +51,6 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
                 N -= 1
                 if N == 0:
                     break
-                print i, line
                 transcript = m.group("transcript").decode("UTF-8")
                 if useBW:
                     transcript = a2bw.convert(transcript, buck._uni2buck)
@@ -66,9 +66,9 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
                 segments.append(s)
                 start = s[1]
                 end = s[2]
-                if copywavfiles:
+                w = os.path.join(dest, "wav", "%s.wav"%(test))
+                if copywavfiles and not os.path.isfile(w):
                     sound.frames = False
-                    w = os.path.join(dest, "wav", "%s.wav"%(test))
                     sound.save(w, start=int(start*sound.params[2]), end=int(end*sound.params[2]))
     return N, prompts
 
@@ -77,18 +77,17 @@ def saveprompts(prompts, out):
     with safeout(out, encoding="UTF-8") as write:
         write(prompts)
 
-def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", promptsfile="originalprompts.segments", rawPrompts=False, useBW=False, out=False, runMadamira=True, N=sys.maxint):
-    N, prompts = segment(src, rawPrompts=rawPrompts, useBW=useBW, N=N)
-    if out:
-        out = os.path.join(dest, out)
-    else:
-        out = os.path.join(dest, promptsfile)
+def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", promptsfile="originalprompts.segments", rawPrompts=False, useBW=False, out=False, runMadamira=True, N=sys.maxint, copywavfiles=False):
+    N, prompts = segment(src, rawPrompts=rawPrompts, useBW=useBW, N=N, copywavfiles=copywavfiles)
+    if not out:
+        out = promptsfile
+    out = os.path.join(dest, out)
     saveprompts(prompts, out)
     if runMadamira:
         runmadamira(src=dest, dest=dest)
     return N
 
-def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=True, useBW=False, out=False, runMadamira=False, N=sys.maxint):
+def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=True, useBW=False, out=False, runMadamira=False, N=sys.maxint, copywavfiles=False):
     for path, dirs, files in os.walk(src):
         for f0 in files:
             f1 = os.path.join(dest, f0.split(".")[0])
@@ -96,7 +95,7 @@ def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=True, useBW=False, out=Fa
                 os.makedirs(f1)
             except:
                 pass
-            N = getPrompts(src=os.path.join(src, f0), dest=f1, rawPrompts=rawPrompts, useBW=useBW, runMadamira=runMadamira, N=N)
+            N = getPrompts(src=os.path.join(src, f0), dest=f1, rawPrompts=rawPrompts, useBW=useBW, runMadamira=runMadamira, N=N, copywavfiles=copywavfiles)
             if N <= 0:
                 return
 
@@ -107,6 +106,10 @@ def tdf2bw(ifile=os.path.join(TDF, TESTPROMPT)):
         write(s)
 
 def runmadamira(madamiradir=MADAMIRAHOME, src="TEMP", dest="TEMP"):
-    print "HERE %s"%(HERE)
-    execute("java -Xmx2500m -Xms2500m -XX:NewRatio=3 -jar MADAMIRA-release-20170403-2.1.jar -rawinput %s/originalprompts.segments -rawoutdir %s"%(src, dest), d=madamiradir)
+    print 'runmadamira(madamiradir=%s, src="%s", dest="%s")'%(madamiradir, src, dest)
+    where = "%s/originalprompts.segments.mada"%(src)
+    if os.path.isfile(os.path.join(where)):
+        print "'%s' already exists"%(where)
+    else:
+        execute("java -Xmx2500m -Xms2500m -XX:NewRatio=3 -jar MADAMIRA-release-20170403-2.1.jar -rawinput %s/originalprompts.segments -rawoutdir %s"%(src, dest), d=madamiradir)
                     
