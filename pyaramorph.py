@@ -36,7 +36,8 @@ TABLE_AC = "tableAC"
 
 class Solution:
 
-    def __init__(self, univoc, buckvoc, lemmaID, pos_a, pos_b, pos_c, gloss_a, gloss_b, gloss_c):
+    def __init__(self, form, univoc, buckvoc, lemmaID, pos_a, pos_b, pos_c, gloss_a, gloss_b, gloss_c):
+        self.form = form
         self.univoc = univoc
         self.buckvoc = buckvoc
         self.lemmaID = lemmaID
@@ -77,12 +78,12 @@ class Analyser:
             if self.prefixes.has_key(prefix) \
                     and self.stems.has_key(stem) \
                     and self.suffixes.has_key(suffix):
-                solutions = self.CheckSegment(prefix, stem, suffix)
+                solutions = self.CheckSegment(word, prefix, stem, suffix)
                 if len(solutions) > 0:
                     results += solutions
         return results
 
-    def CheckSegment(self, prefix, stem, suffix):
+    def CheckSegment(self, word, prefix, stem, suffix):
         """ See if the prefix, stem, and suffix are compatible """
         solutions = []
 
@@ -115,7 +116,7 @@ class Analyser:
                     univoc = buck.buck2uni(buckvoc)
                     if gloss_a == '': gloss_a = '___'
                     if gloss_c == '': gloss_c = '___'
-                    solutions.append(Solution(univoc, buckvoc, lemmaID, pos_a, pos_b, pos_c, gloss_a, gloss_b, gloss_c))
+                    solutions.append(Solution(word, univoc, buckvoc, lemmaID, pos_a, pos_b, pos_c, gloss_a, gloss_b, gloss_c))
         return solutions
 
     def Tokenize(self, str):

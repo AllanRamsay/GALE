@@ -1,6 +1,4 @@
 import re, sys, os
-import a2bw
-reload(a2bw)
 import buck
 from useful import *
 import os, sys, shutil
@@ -48,15 +46,15 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
         for i, line in enumerate(open(src)):
             m = P.match(line.strip())
             if m:
-                N -= 1
-                if N == 0:
+                if N <= 0:
                     break
+                N -= 1
                 transcript = m.group("transcript").decode("UTF-8")
                 if useBW:
-                    transcript = a2bw.convert(transcript, buck._uni2buck)
+                    transcript = buck.uni2buck(transcript, buck._uni2buck)
                 transcript = respace.sub(" ", brackets.sub("", tag.sub("", transcript)))
                 s = [m.group("prompt"), float(m.group("start")), float(m.group("end")), transcript]
-                test ="test-%s-%s"%(prompt, i)
+                test ="test-%s-%s-%s-%s"%(prompt, m.group("gender"), m.group("dialect"), i)
                 if transcript.strip() == "":
                     continue
                 if rawPrompts:
@@ -82,6 +80,7 @@ def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", promptsfile="orig
     if not out:
         out = promptsfile
     out = os.path.join(dest, out)
+    print "len(prompts)=%s"%(len(prompts))
     saveprompts(prompts, out)
     if runMadamira:
         runmadamira(src=dest, dest=dest)
@@ -105,11 +104,14 @@ def tdf2bw(ifile=os.path.join(TDF, TESTPROMPT)):
         s = a2bw.convert(s.decode("UTF-8"))
         write(s)
 
-def runmadamira(madamiradir=MADAMIRAHOME, src="TEMP", dest="TEMP"):
+def runmadamira(madamiradir=MADAMIRAHOME, src="TEMP", dest="TEMP", prompts="originalprompts.segments", convertBW=False):
     print 'runmadamira(madamiradir=%s, src="%s", dest="%s")'%(madamiradir, src, dest)
-    where = "%s/originalprompts.segments.mada"%(src)
-    if os.path.isfile(os.path.join(where)):
-        print "'%s' already exists"%(where)
-    else:
-        execute("java -Xmx2500m -Xms2500m -XX:NewRatio=3 -jar MADAMIRA-release-20170403-2.1.jar -rawinput %s/originalprompts.segments -rawoutdir %s"%(src, dest), d=madamiradir)
+    where = "%s/%s"%(src, prompts)
+    if convertBW:
+        print "converting %s to Arabic"%(where)
+        s = buck.buck2uni(open(where).read())
+        where = "%s.uni"%(where)
+        with safeout(where, encoding="UTF-8") as write:
+            write(s)
+    execute("java -Xmx2500m -Xms2500m -XX:NewRatio=3 -jar MADAMIRA-release-20170403-2.1.jar -rawinput %s -rawoutdir %s"%(where, dest), d=madamiradir)
                     

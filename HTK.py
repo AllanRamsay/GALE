@@ -19,6 +19,7 @@ import buck
 
 try:
     pya
+    reload(pya)
 except:
     import pyaramorph as pya
     reload(pya)
@@ -44,7 +45,7 @@ def clean(d, targets=["data", "training"]):
     allfiles = os.listdir(d)
     if isinstance(targets, str):
         targets = [targets]
-    files = {"data": map(re.compile, ['allprompts.txt', 'mfc', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
+    files = {"data": map(re.compile, ['allprompts.txt', 'mfc*', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
              "wav": map(re.compile, ["wav"]),
              "genfiles": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
             "training": map(re.compile, ['aligned.mlf', 'hmm.*', 'tiedlist', 'wdnet', 'train.scp', 'wintri.mlf', 'dict-tri', 'mktri.hed', 'proto.txt', 'mktri.led', 'flog', 'sil.hed', 'tree.hed', 'fulllist', 'stats', 'trees', 'gram.txt', 'triphones1'])}
@@ -430,12 +431,12 @@ def splitPromptsToTrainAndTest(dest, filteredprompts, training="training.txt", t
     training.close()
 
 promptPattern = re.compile('.*(?P<P>test\S*) .*')
-def prompts2code(dest, prompts, train, wav="wav"):
+def prompts2code(dest, prompts, train, wav="wav", mfcdir="mfc"):
     print "prompts2code(%s, %s, %s)"%(dest, prompts, train)
     with safeout(os.path.join(dest, train)) as write:
         for prompt in promptPattern.finditer(open(os.path.join(dest, prompts)).read()):
             prompt = prompt.group('P')
-            write('"%s/mfc/%s.mfc"\n'%(dest, prompt))
+            write('"%s/%s/%s.mfc"\n'%(dest, mfcdir, prompt))
             
 def wordsmlf(d, training, testing):
     prompts = readPrompts(os.path.join(d, training))+readPrompts(os.path.join(d, testing))
@@ -556,6 +557,7 @@ Allan, 26/07/2017
 def getPYAsolutions(htkfword, word, phondict, useMada):
     solution = False
     for solution in pya.getSolutions(word):
+        solution.buckvoc = solution.buckvoc.replace("{", "A")
         solution = " ".join(HTKFriendly(solution.buckvoc.strip()))
         solution = fixPhonTrans(solution, useMada)
         if not solution in phondict[htkfword]:
@@ -563,11 +565,11 @@ def getPYAsolutions(htkfword, word, phondict, useMada):
     return solution
 
 simpleprefix = re.compile("(?P<prefix>(Al)?)A(?P<rest>.*)")
-def makePYADict(src, dest, prompts, useMada, N=sys.maxint):
+def makePYADict(src, dest, prompts, useMada, N=sys.maxint, pattern=False):
     print "makePYADict: useMada=%s"%(useMada)
     phondict = {}
     pyadict = {}
-    for prompt in readRawMada(os.path.join(src, prompts), N=N)[1]:
+    for prompt in readRawMada(os.path.join(src, prompts), N=N, pattern=pattern)[1]:
         for word in prompt[2:-1]:
             word = buck.uni2buck(word.form)
             htkfword = HTKFriendly(word)
@@ -656,19 +658,59 @@ def borrowDiacritics(w0, w1):
                 break
     return d
 
-def fixDashes(sentences):
+"""
+Regarding the dash with assimilation rules, here is the proposal:
+Words with dash can be assimilated with the previous word and the
+following word.  It may be assimilated with the previous word if it
+starts with a definite article. In most cases, speakers tend not to
+assimilate the definite article with the previous word when they
+pronounce it solely (Al-). So, we shouldn't apply the assimilation
+rules. However, the assimilation rules are not applicable on such case
+because in "readRawMada" we mentioned that (Al-) is transcribed as
+(Qal) and the assimilation rules don't apply on the glottal stop. The
+other case where we have a definite article and part of the word, the
+assimilation rules must be applied.
+
+I listened to many wave files and I noticed that in most cases
+speakers assimilate words with dashes with the following words. So, It
+would be more reasonable to apply them. We can do this in two ways:
+applying the assimilation rules and keeping the dash in the phonetic
+transcription as a phoneme to indicate for the pausing or
+aspiration. The other way is to delete the dashes when preprocessing
+the text before applying the rules. I understand that you want to keep
+the dashes in the phonetic transcription but in such case we will have
+troubles in syllabifying the text and applying the stress rules. For
+this reason, I preferred to remove the dashes from the phonetic
+transcription.
+"""
+def fixDashes(sentences0):
     checked = set()
+    sentences1 = []
     n = 0
-    for j, sentence in enumerate(sentences):
+    for j, sentence in enumerate(sentences0):
         for i, w in enumerate(sentence):
             if w.form == "-":
                 try:
                     w0, w1 = sentence[i-1], sentence[i+1]
                     n += 1
-                    if sentence[i+1].form.startswith(sentence[i-1].form):
+                    """
+                    We're interested in the word before the dash. If that was "Al" 
+                    we will just fix the diacritics to be "Qal", otherwise we will
+                    try to borrow them from the next word
+                    """
+                    if w0.diacritics == "Al":
+                        w0.diacritics = "Qal"
+                    elif sentence[i+1].form.startswith(sentence[i-1].form):
                         w0.diacritics = borrowDiacritics(w0, w1)
                 except Exception as e:
                     pass
+                """
+                Whatever happens, we will omit the dash from the transcription
+                """
+                continue
+            else:
+                sentences1.append(w)
+    return sentences1
 
 class foreign(Exception):
 
@@ -678,12 +720,13 @@ class foreign(Exception):
     def __repr__(self):
         return "foreign('%s')"%(self.msg)
         
-def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint):
+def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint, pattern=False):
     sentences = []
+    print 'readRawMada(ifile="%s")'%(ifile)
     if os.path.isdir(ifile):
         for p, d, files in os.walk(ifile):
             for f in files:
-                N, l = readRawMada(os.path.join(p, f), N=N)
+                N, l = readRawMada(os.path.join(p, f), N=N, pattern=pattern)
                 sentences += l
                 if N <= 0:
                     return N, sentences
@@ -694,6 +737,8 @@ def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint):
                 """
                 Get all examples of the pattern, dig out the bit we want
                 """
+                if pattern and not pattern.match(sentence):
+                    continue
                 if N <= 0:
                     return N, sentences
                 N -= 1
@@ -744,14 +789,21 @@ def praatPrompt(s, d="TEMP/wav"):
         return
     execute("Praat --open %s"%(os.path.join(d, "%s.wav"%(f))))
     
-def mada2prompts(src="TEMP", dest="EXPT", promptsfile="originalprompts.segments.mada", useBW=False, N=sys.maxint):
+def mada2prompts(src="TEMP", dest="EXPT", promptsfile="originalprompts.segments.mada", useBW=False, N=sys.maxint, pattern=False):
     prompts = ""
-    N, sentences = readRawMada(os.path.join(src, promptsfile), N=N)
+    N, sentences = readRawMada(os.path.join(src, promptsfile), pattern=pattern, N=N)
     print "len(sentences) %s"%(len(sentences))
-    printall(sentences[:2])
     for sentence in sentences:
         words = " ".join([HTKFriendly(buck.uni2buck(w.form)) for w in sentence[2:-1]])
-        prompts += "%s %s %s %s\n"%(sentence[0].form, sentence[1].form, words, sentence[-1].form)
+        prompt = "%s %s %s %s\n"%(sentence[0].form, sentence[1].form, words, sentence[-1].form)
+        prompts += prompt
+        try:
+            prompts.decode("ascii")
+        except Exception as e:
+            print "SENTENCE %s"%(sentence)
+            print "PROMPT %s"%(prompt)
+            print "WORDS %s"%(words)
+            raise(e)
     with safeout(os.path.join(dest, "%s.txt"%(promptsfile.split(".")[0]))) as write:
         write(prompts)
 
@@ -821,7 +873,7 @@ def fixPhonTrans(text0, useMada):
     # text0 = text0.replace("p", "h")
     return text0
     
-def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada", useMada=3, useBW=False, sep="\n", N=sys.maxint):
+def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada", useMada=3, useBW=False, sep="\n", N=sys.maxint, pattern=False):
     phondict0 = {}
     phondict1 = {}
     allphones = set()
@@ -830,7 +882,7 @@ def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada
     """
     phones0 = "#!MLF!#\n"
     phones1 = "#!MLF!#\n"
-    for sentence in readRawMada(os.path.join(src, prompts), N=N)[1]:
+    for sentence in readRawMada(os.path.join(src, prompts), N=N, pattern=pattern)[1]:
         phones0 += '"%s.lab"\nsil'%(sentence[0].form)
         phones1 += '"%s.lab"\nsil'%(sentence[0].form)
         for w in sentence[2:-1]:
@@ -860,7 +912,6 @@ def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada
             write("%s\n"%(p))
     phondict0['!ENTER'] = ['sil']
     phondict0['!EXIT'] = ['sil']
-    phondict0['-'] = ['sil']
     return phondict0, {}
                       
 def getunrecog(ifile):
@@ -901,8 +952,12 @@ def getSimplePromptsFromMADAMIRA(prompts0):
 def fixflags(d):
     return ", ".join("%s:%s"%(k, d[k]) for k in sorted(d.keys()))
 
-def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBigramGrammar, useMada="madamira3", useProlog=False, useFixedDict='multi', wav="wav", N=sys.maxsize, useconfig=useconfig25, multiStage="yes"):
+def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBigramGrammar, useMada="madamira3", useProlog=False, useFixedDict='multi', wav="wav", N=sys.maxsize, useconfig=useconfig25, multiStage="yes", pattern=False):
     useconfig()
+    try:
+        pattern = re.compile(pattern)
+    except:
+        pass
     if not dest:
         dest = os.path.join(src, "EXPT-%s-%s"%(prompts, datetime.now().strftime("%b-%d@%H:%M")))
     makedirs(dest)
@@ -925,8 +980,8 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     madamiraPattern = re.compile("madamira(?P<useMada>\d*)")
     samaPattern = re.compile("sama(?P<useMada>\d*)")
     if madamiraPattern.match(useMada):
-        mada2prompts(src=src, dest=src, promptsfile=prompts, N=N)
-    dummyN, originalprompts = readRawMada(os.path.join(src, prompts), N=N)
+        mada2prompts(src=src, dest=src, promptsfile=prompts, N=N, pattern=pattern)
+    dummyN, originalprompts = readRawMada(os.path.join(src, prompts), N=N, pattern=pattern)
     print "Just read %s prompts from %s"%(len(originalprompts), os.path.join(src, prompts))
     filteredprompts = []
     destwavpath = os.path.join(dest, wav)
@@ -936,6 +991,8 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     promptname = re.compile("(.*/)?(?P<promptname>\S*)")
     srcwavpath = os.path.join(src, wav)
     srcwavfiles = set(os.listdir(srcwavpath))
+    makedirs(destwavpath)
+    print "Checking prompts have wav files in %s and copying them into %s"%(srcwavpath, destwavpath)
     for prompt in originalprompts:
         try:
             wavfile = "%s.wav"%(promptname.match(prompt[0].form).group("promptname"))
@@ -946,7 +1003,8 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
             filteredprompts.append(prompt)
             if not os.path.exists(os.path.join(destwavpath, wavfile)):
                 os.link(os.path.join(srcwavpath, wavfile), os.path.join(destwavpath, wavfile))
-    toMFC(dest)
+    mfcdir="mfc-%s"%(useconfig.__name__)
+    toMFC(dest, mfcdir=mfcdir)
     if not filteredprompts == originalprompts:
         print "%s prompts from %s do not have a wav file in %s"%(len(originalprompts)-len(filteredprompts), prompts, src)
         print "proceeding with %s prompts"%(len(filteredprompts))
@@ -988,15 +1046,15 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
         m = samaPattern.match(useMada)
         if m:
             IuseMada = int(m.group("useMada"))
-            phondict0, pyadict = makePYADict(src, dest, prompts, IuseMada, N=N)
+            phondict0, pyadict = makePYADict(src, dest, prompts, IuseMada, N=N, pattern=pattern)
             baseprompts2phones(dest, "%s.bwf"%(allprompts), training, phondict0, n=0)
             baseprompts2phones(dest, "%s.bwf"%(allprompts), training, phondict0, n=1)
             phondict1 = phondict0
         else:
             IuseMada = int(madamiraPattern.match(useMada).group("useMada"))
-            phondict0, pyadict = makeMadaDict(src=src, dest=dest, prompts=prompts, useMada=IuseMada, N=N)
+            phondict0, pyadict = makeMadaDict(src=src, dest=dest, prompts=prompts, useMada=IuseMada, N=N, pattern=pattern)
             if useFixedDict == "multi":
-                phondict1, pyadict = makePYADict(src, dest, prompts, IuseMada, N=N)
+                phondict1, pyadict = makePYADict(src, dest, prompts, IuseMada, N=N, pattern=pattern)
             else:
                 phondict1 = phondict0
             for w in phondict0:
@@ -1020,8 +1078,8 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
         removeShortVowels(os.path.join(dest, "phones1.mlf"))
         removeShortVowels(os.path.join(dest, "dict-%s-0.txt"%(useMada)))
         removeShortVowels(os.path.join(dest, "dict-%s-1.txt"%(useMada)))
-    prompts2code(dest, training, "%s.scp"%(training[:-4]))
-    prompts2code(dest, testing, "%s.scp"%(testing[:-4]))
+    prompts2code(dest, training, "%s.scp"%(training[:-4]), mfcdir=mfcdir)
+    prompts2code(dest, testing, "%s.scp"%(testing[:-4]), mfcdir=mfcdir)
     makeGrammar(dest, prompts="testing.txt", dfile="dict-%s-0.txt"%(useMada))
     return phondict0, pyadict
 
@@ -1029,7 +1087,7 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
 # General initialisation stuff: copy wav files & prompts, make .scp and .mlf files #
 ####################################################################################
 
-def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=False, useMada=False, useForcedAlignment='Y', localtests=50, useTiedList=True, rounds=3, findmismatches=False, phondict=False, quit=100, multiStage="no", useFixedDict="multi"):
+def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=False, useMada=False, useForcedAlignment='Y', localtests=50, useTiedList=True, rounds=3, findmismatches=False, phondict=False, quit=100, multiStage="no", useFixedDict="multi", mfcdir="mfc"):
     T = datetime.now()
     print "TRAINING STARTED %s: useForcedAlignment=%s, useProlog=%s, useMada=%s, multiStage=%s"%(T, useForcedAlignment, useProlog, useMada, multiStage)
     results = []
@@ -1078,7 +1136,7 @@ def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=Fa
     testpattern = re.compile('"*/(?P<test>.*).lab"')
     if useForcedAlignment == 'Y':
         print "DO FORCED ALIGNMENT @ %s"%(i)
-        aligned(d, i, lexicon=lastdict)
+        aligned(d, i, lexicon=lastdict, mfcdir=mfcdir)
     else:
         print "Skipping realignment -- phones1 was derived by using context sensitive rules, so is supposed to have the right version at each point already"
         shutil.copyfile("%s/phones1.mlf"%(d), "%s/aligned.mlf"%(d))
@@ -1293,23 +1351,25 @@ def createHMM0Defs(d, hmm0='hmm0', monophones='monophones0', hmm0defs='hmmdefs',
         hmm0macros = hmm0macros+'\n'+open('%s/%s'%(hmm0, 'vFloors'), 'r').read()
         write(hmm0macros)
 
-def toMFC(dest, wav="wav", mfc="mfc"):
+def toMFC(dest, wav="wav", mfcdir="mfc"):
     wavdir = os.path.join(dest, wav)
-    mfcdir = os.path.join(dest, mfc)
+    mfcdir = os.path.join(dest, mfcdir)
     wavfiles = os.listdir(wavdir)
     makedirs(mfcdir)
     mfcfiles = os.listdir(mfcdir)
+    print "toMFC(%s, %s)"%(wavdir, mfcdir)
     if len(wavfiles) == len(mfcfiles):
         print "%s already populated"%(mfcdir)
     else:
         with safeout(os.path.join(dest, "mfc.scp")) as write:
             for wavfile in wavfiles:
-                write("%s/%s %s/%s.mfc\n"%(wavdir, wavfile, mfcdir, wavfile[:-4]))
+                if not "%s/%s.mfc"%(mfcdir, wavfile[:-4]) in mfcfiles:
+                    write("%s/%s %s/%s.mfc\n"%(wavdir, wavfile, mfcdir, wavfile[:-4]))
         # print "%s/%s contains %.2f minutes of recorded material"%(dest, wav, wavlength(os.path.join(dest, wav))/60.0)
         codetrain(dest, "mfc.scp")
                       
 def codetrain(d, scp, useconfig=useconfig25):
-     makedirs(os.path.join(d, "mfc"))
+     makedirs(os.path.join(d, "mfc-%s"%(useconfig.__name__)))
      execute("HCopy -A -D -T %s -C %s/mfcconfig.txt -S %s"%(DEBUG, d, os.path.join(d, scp)))
 
 def hmm0(d, train):
@@ -1357,13 +1417,13 @@ TI silst {sil.state[3],sp.state[2]}
     execute('HHEd -A -D -T %s -H %s/hmm%s/macros -H %s/hmm%s/hmmdefs -M %s/hmm%s %s/sil.hed %s/monophones1'%(DEBUG, d, i-1, d, i-1, d, i, d, d))
     print "OK, hmm%s should now be created and populated"%(i)
 
-def aligned(dest, i, lexicon="dict1.txt"):
+def aligned(dest, i, lexicon="dict1.txt", mfcdr="mfc"):
     hmm = os.path.join(dest, "hmm%s"%(i))
     print "aligned(%s)"%(hmm)
     testpattern = re.compile('"*/(?P<test>.*).lab"')
     standard = "HVite -A -D -T %s -p 2.0 -s 10.0 -l * -o SWT -a -b !EXIT -m -C %s/config.txt -H %s/macros -H %s/hmmdefs -i %s/aligned.mlf -t 250.0 150.0 1000.0 -y lab -I %s/words.mlf -S %s/training.scp %s/%s %s/monophones1"%(DEBUG, dest, hmm, hmm, dest, dest, dest, dest, lexicon, dest)
     execute(standard)
-    properlyAligned = set('"%s/mfc/%s.mfc"'%(dest, i.group("file")) for i in re.compile("(?P<file>test\S+)\.").finditer(open("%s/aligned.mlf"%(dest)).read()))
+    properlyAligned = set('"%s/%s/%s.mfc"'%(dest, mfcdir, i.group("file")) for i in re.compile("(?P<file>test\S+)\.").finditer(open("%s/aligned.mlf"%(dest)).read()))
     """
     After this we are going to use
     
@@ -1484,7 +1544,7 @@ def enlist(s):
     else:
         return [s]
     
-def experiment(src="DOWNSAMPLED16K", dest="TEST", prompts="originalprompts.segments.mada", dicts=["multi", "fixed"], prolog=[4], stages="no", mada=["madamira3"], forcedAlignment=["Y", "N"], configs=[useconfig39, useconfig25], N=sys.maxsize, localtests=10, quit=100):
+def experiment(src="TEMP", dest="TEST", prompts="originalprompts.segments.mada", dicts=["multi", "fixed"], prolog=0, stages="no", mada="madamira%s"%(FIXSUKUNS), forcedAlignment=["Y", "N"], configs=useconfig39, N=sys.maxsize, localtests=10, quit=100, pattern=False):
     makedirs(dest)
     makeGrammar = makeGrammar1
     makeGrammar = makeBigramGrammar
@@ -1518,12 +1578,12 @@ def experiment(src="DOWNSAMPLED16K", dest="TEST", prompts="originalprompts.segme
                                 continue
                             for n in N:
                                 print "#### EXPERIMENT %s ########"%(fixflags({"useProlog":useProlog, "useMada":useMada, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment}))
-                                experiments.append(EXPERIMENT(src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit))
+                                experiments.append(EXPERIMENT(src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit, pattern=pattern))
     return experiments
 
 class EXPERIMENT:
 
-    def __init__(self, src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, N=sys.maxsize, quit=100, multiStage="no"):
+    def __init__(self, src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, N=sys.maxsize, quit=100, multiStage="no", pattern=False):
         self.src = src
         self.dest = dest
         self.prompts = prompts
@@ -1539,11 +1599,11 @@ class EXPERIMENT:
         """
         Absolutely bog-standard dataprep
         """
-        self.phondict, self.pyadict = dataprep(src, dest, prompts=prompts, useProlog=useProlog, useMada=useMada, useFixedDict=useFixedDict, useconfig=useconfig, makeGrammar=makeGrammar, N=N, multiStage=self.multiStage)
+        self.phondict, self.pyadict = dataprep(src, dest, prompts=prompts, useProlog=useProlog, useMada=useMada, useFixedDict=useFixedDict, useconfig=useconfig, makeGrammar=makeGrammar, N=N, multiStage=self.multiStage, pattern=pattern)
         """
         Then do training
         """
-        self.alignments = train(dest, useProlog=useProlog, useMada=useMada, useForcedAlignment=useForcedAlignment, localtests=localtests, phondict=self.phondict, quit=quit, multiStage=self.multiStage) 
+        self.alignments = train(dest, useProlog=useProlog, useMada=useMada, useForcedAlignment=useForcedAlignment, localtests=localtests, phondict=self.phondict, quit=quit, multiStage=self.multiStage, mfcdir="mfc-%s"%(useconfig.__name__)) 
 
 ###################################################################
 # bits and pieces for debugging and generally poking around       #
