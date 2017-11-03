@@ -86,7 +86,7 @@ def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", promptsfile="orig
         runmadamira(src=dest, dest=dest)
     return N
 
-def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=True, useBW=False, out=False, runMadamira=False, N=sys.maxint, copywavfiles=False):
+def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=False, useBW=False, out=False, runMadamira=False, N=sys.maxint, copywavfiles=False):
     for path, dirs, files in os.walk(src):
         for f0 in files:
             f1 = os.path.join(dest, f0.split(".")[0])

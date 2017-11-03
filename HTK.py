@@ -45,8 +45,8 @@ def clean(d, targets=["data", "training"]):
     allfiles = os.listdir(d)
     if isinstance(targets, str):
         targets = [targets]
-    files = {"data": map(re.compile, ['allprompts.txt', 'mfc*', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
-             "wav": map(re.compile, ["wav"]),
+    files = {"data": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
+             "wav": map(re.compile, ["wav", 'mfc*']),
              "genfiles": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
             "training": map(re.compile, ['aligned.mlf', 'hmm.*', 'tiedlist', 'wdnet', 'train.scp', 'wintri.mlf', 'dict-tri', 'mktri.hed', 'proto.txt', 'mktri.led', 'flog', 'sil.hed', 'tree.hed', 'fulllist', 'stats', 'trees', 'gram.txt', 'triphones1'])}
     for target in targets:
@@ -303,14 +303,15 @@ def noEmptyStrings(l):
     return [x for x in l if not x == '' and not x == ' + ']
   
 def genDictFromProlog(exptdir, phonprompts="phonprompts.txt", allprompts="allprompts.bwf"):
-    print "genDictFromProlog(%s, %s, %s)"%(exptdir, phonprompts, allprompts)
-    allprompts = [p.strip() for p in open(allprompts)]
+    print "genDictFromProlog('%s', '%s', '%s')"%(exptdir, phonprompts, allprompts)
+    allprompts = {p.split()[0]: p for p in open(allprompts)}
     data = open("%s/%s"%(exptdir, phonprompts)).read()
     dict = {}
-    patt = re.compile("'(?P<prompt>\S*)'\ntext: (?P<text>.+?)sampa: (?P<sampa>.+?)\n", re.DOTALL)
-    for i, it in enumerate(patt.finditer(data)):        
+    patt = re.compile("'(?P<prompt>\S*)'\ntext: (?P<text>[^\n]*)\nsampa: (?P<sampa>[^\n]*)\n", re.DOTALL)
+    for it in patt.finditer(data):        
         words = it.group('text').strip() # patt = 'text: (.+?) ...' ==> group(1), or patt = 'text: (?P<text>.+?) ...' ==> group('text') 
-        wordslist = allprompts[i].split()[2:-1] # some words in one line,, changes from double spaces to single space
+        prompt = allprompts[it.group("prompt")]
+        wordslist = prompt.split()[2:-1] # some words in one line,, changes from double spaces to single space
         phones = it.group('sampa').strip() 
         netPhones = noEmptyStrings(re.split('##',phones)) # to remove '' from phones
         if not len(wordslist) == len(netPhones):
@@ -348,8 +349,7 @@ def prologprep(exptdir, allprompts='allprompts.bwf', prologprompts="prompts.pl",
     to apply. So for the simpler rules or for small training sets it's quite
     likely that the dictionary will only have a single entry per word.
     """
-    dicTest = genDictFromProlog(exptdir=exptdir, phonprompts=phonprompts, allprompts=os.path.join(exptdir, allprompts))
-    return dicTest # worth knowing whether the dictionary had multiple entries
+    return genDictFromProlog(exptdir=exptdir, phonprompts=phonprompts, allprompts=os.path.join(exptdir, allprompts))
     
 
 ####################################################################################
@@ -405,6 +405,174 @@ def readPrompts(prompts):
         prompts = open(prompts).read().strip()
     return [singlespaces(p.strip()) for p in prompts.split("\n")]
 
+"""
+The raw Mada output file looks like (I've had to remove all the actual
+Arabic in order to get this allowed inside a Python source file)
+
+;;; SENTENCE ...
+;;WORD ...
+;;LENGTH 5
+;;OFFSET 0
+;;SVM_PREDICTIONS: ... diac:minoTaqapi lex:minoTaqap asp:na cas:n enc0:0 gen:f mod:na num:s per:na pos:noun prc0:0 prc1:0 prc2:0 prc3:0 stt:c vox:na
+*0.883957 diac:... lex:... bw:minoTaq/NOUN+ap/NSUFF_FEM_SG+u/CASE_DEF_NOM gloss:area;zone;territory sufgloss:[fem.sg.] pos:noun prc3:0 prc2:0 prc1:0 prc0:0 per:na asp:na vox:na mod:na gen:f num:s stt:c cas:n enc0:0 rat:y source:lex stem: stemcat:Napdu
+--------------
+...
+
+If we split it on "SENTENCE" we will get a list of sentences, each of
+which consists of a set of WORDs. Each of these contains (at least
+one) bit that looks like *0.883957 diac:.... So if we iterate over a
+pattern that looks for a sequence of digits (i.e. the last bit of the
+number) followed by "diac:" followed by some stuff, then "some stuff"
+will be the diacriticised form.
+"""
+
+class MADASOLUTION:
+
+    def __init__(self, form, diacritics, gloss):
+        self.form = form
+        self.diacritics = diacritics
+        self.gloss = gloss
+
+    def __repr__(self):
+        return "%s:%s:%s"%(str(self.form.encode("UTF-8")), str(self.diacritics), str(self.gloss))
+
+"""
+Copy the diacritics from the following word. If you hit the next
+element of the form of the preceding one, move on. If this was the end
+of the preceding one then quit.
+"""
+
+def borrowDiacritics(w0, w1):
+    d = u""
+    b = buck.uni2buck(w0.form)
+    for i, c in enumerate(w1.diacritics):
+        d += c
+        if c == b[0]:
+            b = b[1:]
+            if b == "":
+                if len(d) == 1:
+                    try:
+                        d += w1.diacritics[i+1]
+                    except:
+                        pass
+                break
+    return d
+
+"""
+Regarding the dash with assimilation rules, here is the proposal:
+Words with dash can be assimilated with the previous word and the
+following word.  It may be assimilated with the previous word if it
+starts with a definite article. In most cases, speakers tend not to
+assimilate the definite article with the previous word when they
+pronounce it solely (Al-). So, we shouldn't apply the assimilation
+rules. However, the assimilation rules are not applicable on such case
+because in "readRawMada" we mentioned that (Al-) is transcribed as
+(Qal) and the assimilation rules don't apply on the glottal stop. The
+other case where we have a definite article and part of the word, the
+assimilation rules must be applied.
+
+I listened to many wave files and I noticed that in most cases
+speakers assimilate words with dashes with the following words. So, It
+would be more reasonable to apply them. We can do this in two ways:
+applying the assimilation rules and keeping the dash in the phonetic
+transcription as a phoneme to indicate for the pausing or
+aspiration. The other way is to delete the dashes when preprocessing
+the text before applying the rules. I understand that you want to keep
+the dashes in the phonetic transcription but in such case we will have
+troubles in syllabifying the text and applying the stress rules. For
+this reason, I preferred to remove the dashes from the phonetic
+transcription.
+"""
+def fixDashes(sentence0):
+    sentence1 = []
+    n = 0
+    for i, w in enumerate(sentence0):
+        if w.form == "-":
+            try:
+                w0, w1 = sentence[i-1], sentence[i+1]
+                n += 1
+                """
+                We're interested in the word before the dash. If that was "Al" 
+                we will just fix the diacritics to be "Qal", otherwise we will
+                try to borrow them from the next word
+                """
+                if w0.diacritics == "Al":
+                    w0.diacritics = "Qal"
+                elif sentence[i+1].form.startswith(sentence[i-1].form):
+                    """ 
+                    bgt- bgtdq
+                    Mada said that bgt was bagat but that bgtdq was bugutidaq
+                    Because the false start looks like the next word, we use the next word's
+                    diacritics, so for bgt we do bugut
+                    """
+                    w0.diacritics = borrowDiacritics(w0, w1)
+                elif len(sentence[i-1].form) == 1:
+                    w0.diacritics = sentence[i-1].form+"a"
+            except Exception as e:
+                pass
+            """
+            Whatever happens, we will omit the dash from the transcription
+            """
+            continue
+        else:
+            sentence1.append(w)
+    return sentence1
+
+class foreign(Exception):
+
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __repr__(self):
+        return "foreign('%s')"%(self.msg)
+     
+SPATTERN = re.compile(";;; SENTENCE(?P<sentence>.*?)SENTENCE BREAK", re.DOTALL)
+WPATTERN = re.compile("WORD (@@LAT@@)?(?P<word>\S*)\s.*?--------------", re.DOTALL)
+DPATTERN = re.compile(".*SVM_PREDICTIONS:\s*(@@LAT@@)?\S*\s*diac:(?P<diac>\S*)\s.*?((?P<gloss>gloss:\s*\S*)|(?P<none>NO-ANALYSIS)).*", re.DOTALL)
+   
+def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint, pattern=False):
+    sentences = []
+    if os.path.isdir(ifile):
+        for p, d, files in os.walk(ifile):
+            for f in files:
+                N, l = readRawMada(os.path.join(p, f), N=N, pattern=pattern)
+                sentences += l
+                if N <= 0:
+                    return N, sentences
+        return N, sentences
+    else:
+        if ifile.endswith(".mada"):
+            for sentence in SPATTERN.finditer(codecs.open(ifile, encoding="UTF-8").read().strip()):
+                """
+                Get all examples of the pattern, dig out the bit we want
+                """
+                sentence = sentence.group("sentence")
+                if pattern and not pattern.match(sentence):
+                    continue
+                if N <= 0:
+                    return N, sentences
+                N -= 1
+                words = []
+                try:
+                    for w in WPATTERN.finditer(sentence):
+                        form = w.group("word")
+                        d = DPATTERN.match(w.group(0))
+                        diac = d.group("diac")
+                        try:
+                            gloss = d.group("gloss")
+                        except:
+                            gloss = d.group("none")
+                        if "foreign" in form:
+                            raise foreign(form)
+                        if re.compile(".*\d.*").match(form) and not form.startswith("*/test"):
+                            raise foreign(form)
+                        words.append(MADASOLUTION(form, diac, gloss))
+                except foreign:
+                    continue
+                if len(words) > 3:
+                    sentences.append(fixDashes(words))
+    return N, sentences
+
 MAXTEST = 100
 def splitPromptsToTrainAndTest(dest, filteredprompts, training="training.txt", testing="testing.txt", grain=10):
     training = os.path.join(dest, training)
@@ -452,43 +620,37 @@ def wordsmlf(d, training, testing):
 def phonprompts2phones(exptdir, prompts, training, phonprompts, n=0):
     print "phonprompts2phones(%s, %s, %s, %s, %s)"%(exptdir, prompts, training, phonprompts, n)
     phones = set(["sil"])
-    prompts = readPrompts(os.path.join(exptdir, prompts))
-    training = set([prompt.strip() for prompt in open("%s/%s"%(exptdir, training)).read().split("\n")])
-    phonprompts = readPrompts(os.path.join(exptdir, phonprompts))
-    xpattern = re.compile("(?P<testID>\*/\S*) !ENTER (?P<testTXT>.*) !EXIT")
-    tpattern = re.compile("text: (?P<text>.*)")
-    spattern = re.compile("sampa: (?P<sampa>.*)")
-    print "processing %s prompts"%(len(prompts))
-    printall(phonprompts[:5])
+    prompts = {p.split()[0]: p for p in open(os.path.join(exptdir, prompts))}
+    tprompts0 = {prompt.strip().split()[0]: prompt for prompt in open("%s/%s"%(exptdir, training)).read().split("\n") if not prompt.strip() == ""}
+    p = re.compile("""'(?P<prompt>\S*)'
+text: [^\n]*
+sampa: (?P<sampa>[^[\n]*)
+""", re.DOTALL)
+    tprompts1 = []
     with safeout("%s/phones%s.mlf"%(exptdir, n)) as write:
         write("""#!MLF!#""")
-        for i in range(len(prompts)):
-            tprompt = prompts[i].strip()
-            m = xpattern.match(tprompt)
-            try:
-                [testID, ppromptTXT, ppromptSAMPA] = phonprompts[3*i:3*i+3]
-            except:
-                break
-            if not testID[1:-1] == m.group("testID"):
-                raise Exception("prompts and phonprompts out of sync: %s, %s"%(m.group("testTXT"), ppromptTXT))
-            ppromptTXT = tpattern.match(ppromptTXT.strip()).group("text")
-            ppromptSAMPA = spattern.match(ppromptSAMPA.strip()).group("sampa")
-            if n == 1:
-                ppromptSAMPA = ppromptSAMPA.replace(" ## ", " sp ")
-            ppromptSAMPA = ppromptSAMPA.replace(" ##", "")
-            for phone in ppromptSAMPA.split(" "):
+        for i in p.finditer(open(os.path.join(exptdir, phonprompts)).read()):
+            prompt = i.group("prompt")
+            sampa = i.group("sampa")
+            sampa = sampa.replace(" ## ", " sp " if n == 1 else " ")
+            for phone in sampa.split(" "):
                 phones.add(phone)
-            if tprompt in training:
-                write("""
+            if prompt in tprompts0:
+                tprompts1.append(prompt)
+                s = """
 "%s.lab"
 sil
 %s
 sil
 .
-"""%(m.group("testID"), ppromptSAMPA.replace(" ", "\n")))
+"""%(prompt, sampa)
+                write(re.compile("\s+").sub("\n", s))
     with safeout("%s/monophones%s"%(exptdir, n)) as write:
         for phone in phones:
             write("%s\n"%(phone))
+    with safeout("%s/%s"%(exptdir, training)) as write:
+        for prompt in tprompts1:
+            write("%s\n"%tprompts0[prompt])
     
 def baseprompts2phones(exptdir, prompts, training, dicTest, n=0):
     print "baseprompts2phones(%s, %s, %s, %s)"%(exptdir, prompts, training, n)
@@ -599,169 +761,6 @@ def makePYADict(src, dest, prompts, useMada, N=sys.maxint, pattern=False):
     phondict['!EXIT'] = ['sil']
     return phondict, pyadict
 
-"""
-The raw Mada output file looks like (I've had to remove all the actual
-Arabic in order to get this allowed inside a Python source file)
-
-;;; SENTENCE ...
-;;WORD ...
-;;LENGTH 5
-;;OFFSET 0
-;;SVM_PREDICTIONS: ... diac:minoTaqapi lex:minoTaqap asp:na cas:n enc0:0 gen:f mod:na num:s per:na pos:noun prc0:0 prc1:0 prc2:0 prc3:0 stt:c vox:na
-*0.883957 diac:... lex:... bw:minoTaq/NOUN+ap/NSUFF_FEM_SG+u/CASE_DEF_NOM gloss:area;zone;territory sufgloss:[fem.sg.] pos:noun prc3:0 prc2:0 prc1:0 prc0:0 per:na asp:na vox:na mod:na gen:f num:s stt:c cas:n enc0:0 rat:y source:lex stem: stemcat:Napdu
---------------
-...
-
-If we split it on "SENTENCE" we will get a list of sentences, each of
-which consists of a set of WORDs. Each of these contains (at least
-one) bit that looks like *0.883957 diac:.... So if we iterate over a
-pattern that looks for a sequence of digits (i.e. the last bit of the
-number) followed by "diac:" followed by some stuff, then "some stuff"
-will be the diacriticised form.
-"""
-
-# Here's the pattern
-
-SPATTERN = re.compile(";;; SENTENCE(?P<sentence>.*?)SENTENCE BREAK", re.DOTALL)
-WPATTERN = re.compile("WORD.*?--------------", re.DOTALL)
-DPATTERN = re.compile(".*SVM_PREDICTIONS:\s*(@@LAT@@)?(?P<word>\S*)\s*diac:(?P<diac>\S*)\s.*?((?P<gloss>gloss:\s*\S*)|(?P<none>NO-ANALYSIS)).*", re.DOTALL)
-
-class MADASOLUTION:
-
-    def __init__(self, form, diacritics, gloss):
-        self.form = form
-        self.diacritics = diacritics
-        self.gloss = gloss
-
-    def __repr__(self):
-        return "%s:%s:%s"%(str(self.form.encode("UTF-8")), str(self.diacritics), str(self.gloss))
-
-"""
-Copy the diacritics from the following word. If you hit the next
-element of the form of the preceding one, move on. If this was the end
-of the preceding one then quit.
-"""
-
-def borrowDiacritics(w0, w1):
-    d = u""
-    b = buck.uni2buck(w0.form)
-    for i, c in enumerate(w1.diacritics):
-        d += c
-        if c == b[0]:
-            b = b[1:]
-            if b == "":
-                if len(d) == 1:
-                    try:
-                        d += w1.diacritics[i+1]
-                    except:
-                        pass
-                break
-    return d
-
-"""
-Regarding the dash with assimilation rules, here is the proposal:
-Words with dash can be assimilated with the previous word and the
-following word.  It may be assimilated with the previous word if it
-starts with a definite article. In most cases, speakers tend not to
-assimilate the definite article with the previous word when they
-pronounce it solely (Al-). So, we shouldn't apply the assimilation
-rules. However, the assimilation rules are not applicable on such case
-because in "readRawMada" we mentioned that (Al-) is transcribed as
-(Qal) and the assimilation rules don't apply on the glottal stop. The
-other case where we have a definite article and part of the word, the
-assimilation rules must be applied.
-
-I listened to many wave files and I noticed that in most cases
-speakers assimilate words with dashes with the following words. So, It
-would be more reasonable to apply them. We can do this in two ways:
-applying the assimilation rules and keeping the dash in the phonetic
-transcription as a phoneme to indicate for the pausing or
-aspiration. The other way is to delete the dashes when preprocessing
-the text before applying the rules. I understand that you want to keep
-the dashes in the phonetic transcription but in such case we will have
-troubles in syllabifying the text and applying the stress rules. For
-this reason, I preferred to remove the dashes from the phonetic
-transcription.
-"""
-def fixDashes(sentences0):
-    checked = set()
-    sentences1 = []
-    n = 0
-    for j, sentence in enumerate(sentences0):
-        for i, w in enumerate(sentence):
-            if w.form == "-":
-                try:
-                    w0, w1 = sentence[i-1], sentence[i+1]
-                    n += 1
-                    """
-                    We're interested in the word before the dash. If that was "Al" 
-                    we will just fix the diacritics to be "Qal", otherwise we will
-                    try to borrow them from the next word
-                    """
-                    if w0.diacritics == "Al":
-                        w0.diacritics = "Qal"
-                    elif sentence[i+1].form.startswith(sentence[i-1].form):
-                        w0.diacritics = borrowDiacritics(w0, w1)
-                except Exception as e:
-                    pass
-                """
-                Whatever happens, we will omit the dash from the transcription
-                """
-                continue
-            else:
-                sentences1.append(w)
-    return sentences1
-
-class foreign(Exception):
-
-    def __init__(self, msg):
-        self.msg = msg
-
-    def __repr__(self):
-        return "foreign('%s')"%(self.msg)
-        
-def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint, pattern=False):
-    sentences = []
-    print 'readRawMada(ifile="%s")'%(ifile)
-    if os.path.isdir(ifile):
-        for p, d, files in os.walk(ifile):
-            for f in files:
-                N, l = readRawMada(os.path.join(p, f), N=N, pattern=pattern)
-                sentences += l
-                if N <= 0:
-                    return N, sentences
-        return N, sentences
-    else:
-        if ifile.endswith(".mada"):
-            for sentence in SPATTERN.finditer(codecs.open(ifile, encoding="UTF-8").read().strip()):
-                """
-                Get all examples of the pattern, dig out the bit we want
-                """
-                if pattern and not pattern.match(sentence):
-                    continue
-                if N <= 0:
-                    return N, sentences
-                N -= 1
-                words = []
-                try:
-                    for w in WPATTERN.finditer(sentence.group("sentence")):
-                        d = DPATTERN.match(w.group(0))
-                        w = d.group("word")
-                        diac = d.group("diac")
-                        try:
-                            gloss = d.group("gloss")
-                        except:
-                            gloss = d.group("none")
-                        if "foreign" in w:
-                            raise foreign(w)
-                        words.append(MADASOLUTION(w, diac, gloss))
-                    if len(words) > 3:
-                        sentences.append(words)
-                except foreign:
-                    pass
-            fixDashes(sentences)
-    return N, sentences
-
 def rawMada2Diacritics(l):
     return [(" ").join(w.diacritics for w in s) for s in l]
 
@@ -792,7 +791,6 @@ def praatPrompt(s, d="TEMP/wav"):
 def mada2prompts(src="TEMP", dest="EXPT", promptsfile="originalprompts.segments.mada", useBW=False, N=sys.maxint, pattern=False):
     prompts = ""
     N, sentences = readRawMada(os.path.join(src, promptsfile), pattern=pattern, N=N)
-    print "len(sentences) %s"%(len(sentences))
     for sentence in sentences:
         words = " ".join([HTKFriendly(buck.uni2buck(w.form)) for w in sentence[2:-1]])
         prompt = "%s %s %s %s\n"%(sentence[0].form, sentence[1].form, words, sentence[-1].form)
@@ -954,10 +952,8 @@ def fixflags(d):
 
 def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBigramGrammar, useMada="madamira3", useProlog=False, useFixedDict='multi', wav="wav", N=sys.maxsize, useconfig=useconfig25, multiStage="yes", pattern=False):
     useconfig()
-    try:
+    if isinstance(pattern, str):
         pattern = re.compile(pattern)
-    except:
-        pass
     if not dest:
         dest = os.path.join(src, "EXPT-%s-%s"%(prompts, datetime.now().strftime("%b-%d@%H:%M")))
     makedirs(dest)
@@ -1011,8 +1007,6 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     allprompts = "allprompts"
     print "copy what you found in %s to %s"%(os.path.join(src, prompts), os.path.join(dest, allprompts))
     filteredprompts = getSimplePromptsFromMADAMIRA(filteredprompts)
-    print "Filtered"
-    printall([" ".join(p) for p in filteredprompts[:8]])
     with safeout(os.path.join(dest, "%s.txt"%(allprompts))) as write:
         write("\n".join([" ".join(p) for p in filteredprompts]))
     with safeout(os.path.join(dest, "%s.bwf"%(allprompts))) as write:
@@ -1064,6 +1058,13 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     if useProlog:
         print "useProlog %s"%(useProlog)
         phonprompts = "phonprompts%s.txt"%(useProlog)
+        """
+        I am getting prompts (well actually lots of them) where the
+        Prolog rules fail: to overcome that, I'm making prologprep be
+        more careful to check that we do indeed have a text and a
+        sampa form, and I'm returning the list of prompts where this
+        worked as well as the dictionary
+        """
         phondict0 = prologprep(dest, allprompts="%s.bwf"%(allprompts), useFixedDict=useFixedDict, phonprompts=phonprompts, useProlog=useProlog)
         phondict1 = phondict0
         phonprompts2phones(dest, "%s.bwf"%(allprompts), training, phonprompts, n=0)
@@ -1357,7 +1358,7 @@ def toMFC(dest, wav="wav", mfcdir="mfc"):
     wavfiles = os.listdir(wavdir)
     makedirs(mfcdir)
     mfcfiles = os.listdir(mfcdir)
-    print "toMFC(%s, %s)"%(wavdir, mfcdir)
+    print "toMFC(%s, %s): already contains %s files"%(wavdir, mfcdir, len(mfcfiles))
     if len(wavfiles) == len(mfcfiles):
         print "%s already populated"%(mfcdir)
     else:
@@ -1417,7 +1418,7 @@ TI silst {sil.state[3],sp.state[2]}
     execute('HHEd -A -D -T %s -H %s/hmm%s/macros -H %s/hmm%s/hmmdefs -M %s/hmm%s %s/sil.hed %s/monophones1'%(DEBUG, d, i-1, d, i-1, d, i, d, d))
     print "OK, hmm%s should now be created and populated"%(i)
 
-def aligned(dest, i, lexicon="dict1.txt", mfcdr="mfc"):
+def aligned(dest, i, lexicon="dict1.txt", mfcdir="mfc"):
     hmm = os.path.join(dest, "hmm%s"%(i))
     print "aligned(%s)"%(hmm)
     testpattern = re.compile('"*/(?P<test>.*).lab"')
