@@ -1,0 +1,124 @@
+/*
+      SOMALIMISC.PL
+*/
+
+somaliDualForm(X, Z) :-
+    dir@Y <> xbefore,
+    somaliDualForm(X, Z, Y).
+
+somaliDualForm(X, X, _Y).
+somaliDualForm(X, Z, Y) :-
+    somaliCliticForm(X, Z, Y).
+
+somaliCliticForm(X, Z, Y) :-
+    cat@X <-> compound(Y, ORDER),
+    (dir@Y <> xbefore -> ORDER = [Y, Z]; ORDER = [Z, Y]),
+    X <> [saturated],
+    language@X <-> language@Y,
+    language@X <-> language@Z,
+    affixes@X <-> [Y],
+    Y <> [word, inflected1], %!!!!!!!!!!!!!!!!!!!!
+    -affix@Y.
+    
+somaliWHPro(X) :-
+    +clitic@X,
+    wh@X <-> W0/W1,
+    [agree, positions]@NP <-> [agree, positions]@X,
+    when(nonvar(W1),
+	 somaliWH(W0/W1, index@X, NP)).
+
+somaliWH(W/W, _I, _NP).
+somaliWH(W0/[NP | W0], _I, NP) :-
+    NP <> [np, adjunct],
+    target@NP <> np,
+    target@NP <-> TARGET,
+    dir@TARGET <> xafter,
+    % to stop,WH-clauses picking up case markers, 12-01-06
+    -modifiable@NP,
+    xend@TARGET <-> start@NP.
+
+somaliZero(ZERO) :-
+    somaliWHPro(ZERO),
+    +clitic@ZERO,
+    dir@ZERO <> xbefore,
+    -default@case@ZERO,
+    specifier@ZERO <-> pro_ref,
+    semantics@ZERO <-> person(agree@ZERO),
+    when(nonvar(NOM),
+	 (acc(ZERO) -> third(ZERO); true)).
+
+somaliSmallPron(X) :-
+    +clitic@X,
+    semantics@X <-> PRO,
+    specifier@X <-> pro_ref.
+
+somaliSmallSubjPron(X, Z) :-
+    % X = Z,
+    somaliDualForm(X, Z, Y),
+    dir@Y <> xbefore,
+    somaliSmallPron(Z),
+    Z <> reallyNom,
+    -after@displaced@Z.
+
+somaliSmallObjPron1(X) :-
+    somaliWHPro(X),
+    somaliSmallPron(X),
+    -moved@displaced@X, % This has to be commented out to allow alternate "swapping" args of compound adpositions
+    X <> acc_or_dat.
+
+somaliSmallObjPron2(X) :-
+    somaliWHPro(X),
+    somaliSmallPron(X),
+    -moved@displaced@X, % This has to be commented out to allow alternate "swapping" args of compound adpositions
+    X <> acc_or_dat.
+
+somaliDet(X, Z, GEN) :-
+    cat@X <-> compound(Y, [Y, Z]),
+    modifier@Z <-> *det,
+    X <> [saturated],
+    % need to catch the fact that the constituents are in the same language
+    % at this point rather than leaving it to some later element to sort out
+    language@X <-> language@Y,
+    language@X <-> language@Z,
+    affixes@X <-> [GEN, Y],
+    dir@GEN <> xbefore,
+    affix@GEN <-> *gender,
+    Y <> [word, inflected1],
+    dir@Y <> xbefore,
+    % to stop it attempting to combine with something which looks like a clitic pronoun
+    -clitic@Y,
+    -affix@Y,
+    agree@Z <-> agree@GEN,
+    Z <> [det, saturated],
+    target@Z <-> TARGET,
+    TARGET <> [nn, fullyUnspecified],
+    head@TARGET<-> head@result@Z,
+    % Need to describe the result properly
+    result@Z <> np,
+    agree@Z <-> agree@TARGET,
+    +fixed@target@Z,
+    xend@TARGET <-> start@Z,
+    [def, agree]@Z <-> [def, agree]@result@Z.
+
+somaliComplementiser(X, Z, comp@result@Z) :-
+    somaliDualForm(X, Z, Y),
+    X = Z,
+    dir@Y <> xafter,
+    -clitic@Y,
+    % +clitic@Y,
+    cat@Z <-> focusMarker,
+    Z <> [adjunct, inflected],
+    target@Z <-> TARGET,
+    subject@TARGET <-> SUBJ,
+    TARGET <> s,
+    -clitic@Z,
+    -comp@TARGET,
+    modifier@Z <-> *comp(text@Z),
+    dir@TARGET <> xbefore,
+    semantics@Z <-> identity,
+    result@Z <> s,
+    modified@result@Z <-> 3.
+
+somaliComplementiser(X, Z) :-
+    somaliComplementiser(X, Z, modifier@Z).
+    

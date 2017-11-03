@@ -1,0 +1,92 @@
+%%%% TESTRULES.PL %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+testrules :-
+  	retractall(matched(_, _, _)),
+  	treebanksent(S),
+  	atom_chars(A, S),
+  	format('testRule("~s", _, _, SAMPA).~n', [S]),
+  	(testRule(S, _CHARS0, _CHARS1, SAMPA) ->
+  	 true;
+  	 (format('testRule failed on ~w~n', [A]),
+  	  fail)),
+  	format('text: ~w~nsampa: ~w~n~n', [A, SAMPA]),
+  	fail.
+testrules :-
+  	setof(H0=H1:A, matched(H0, H1, A), L),
+  	pretty(L),
+  	fail.
+testrules.
+
+
+% testrules :-
+%  	retractall(matched(_, _, _)),
+%  	sentence(_ID, S),
+%  	atom_chars(A, S),
+% %	format('~w~n', [ID]),
+%  	(testRule(S, _CHARS0, _CHARS1, SAMPA) ->
+%  	 true;
+%  	 (format('testRule failed on ~w~n', [A]),
+%  	  fail)),
+%  	format('text: ~w~nsampa: ~w~n',[A, SAMPA]),
+%  	fail.
+% testrules :-
+%   	setof(H1:A, matched(H1, A), L),
+%   	pretty(L),
+%   	fail.
+% testrules.
+
+test(PROMPTS) :-
+	catch((compile([PROMPTS]), testrules), ERRMSG, format('~w~n', [ERRMSG])),
+	halt.
+
+
+matchWords([], [], _A).
+matchWords([H0 | T0], [H1 | T1], A) :-
+	(matched(H0, H1, _) ->
+	 true;
+	 assert(matched(H0, H1, A))),
+	matchWords(T0, T1, A).
+
+getWordsFromString(CHARS, WORDS) :-
+	getWordsFromString(CHARS, [], WORDS).
+
+
+getWordsFromString([], [], []) :-
+	!.
+getWordsFromString([], CURRENT, [A]) :-
+	!,
+	atom_chars(A, CURRENT).
+getWordsFromString([32 | CHARS], [], WORDS) :-
+	!,
+	getWordsFromString(CHARS, [], WORDS).
+getWordsFromString([32 | CHARS], CURRENT, [A | WORDS]) :-
+	!,
+	atom_chars(A, CURRENT),
+	getWordsFromString(CHARS, [], WORDS).
+getWordsFromString([C | STRING], CURRENT0, WORDS) :-
+	append(CURRENT0, [C], CURRENT1),
+	getWordsFromString(STRING, CURRENT1, WORDS).
+
+getWordsFromChars(CHARS, WORDS) :-
+	getWordsFromChars(CHARS, [], WORDS).
+
+getWordsFromChars([], [], []) :-
+	!.
+getWordsFromChars([], CURRENT, [CURRENT]) :-
+	!.
+getWordsFromChars([X | CHARS], [], WORDS) :-
+	+initial:pos@word:char@X,
+	!,
+	getWordsFromChars(CHARS, [sampa:char@X], WORDS).
+getWordsFromChars([X | CHARS], CURRENT, [CURRENT | WORDS]) :-
+	+initial:pos@word:char@X,
+	!,
+	getWordsFromChars(CHARS, [sampa:char@X], WORDS).
+getWordsFromChars([C | STRING], CURRENT0, WORDS) :-
+	append(CURRENT0, [sampa:char@C], CURRENT1),
+	getWordsFromChars(STRING, CURRENT1, WORDS).
+
+
+
+
+	

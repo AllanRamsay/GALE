@@ -1,0 +1,258 @@
+
+
+%%%% TYPES.PL %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+/*********************************************************************
+Common signatures (see Section \ref{types})
+**********************************************************************/
+
+signature(dir=[moved=_,
+	       after=_,
+	       before=_]).
+
+xafter(X) :-
+    +after:dir@X,
+    -before:dir@X.
+
+xbefore(X) :-
+    -after:dir@X,
+    +before:dir@X.
+
+signature(def=[value=_, usedef=_]).
+
+signature(tag=[ptag=_,
+	       itag=_,
+	       vtag=_,
+	       ftag=_,
+	       ntag=_]).
+
+signature(sign=[structure=[positions=[start=_B,
+				      end=_C,
+				      span=_D,
+				      compact=_E,
+				      xstart=_F,
+				      xend=_G],
+			   forms=[text=_H,
+				  underlying=_,
+				  root=_,
+				  surface=_,
+				  mother=_M],
+			   tag=_,
+			   core=_P,
+			   index=_Q,
+			   anchor=_,
+			   dir=_R,
+			   displaced=_S,
+			   dtrs=_T,
+			   thread=_U,
+			   misc=[language=_V,
+				 realised=_W,
+				 zero=_X,
+				 initial_cap=_Y,
+				 heavy=_Z,
+				 ellipse=_AA,
+				 silence=_AB,
+				 optional=_,
+				 modified=_AC]],
+                syntax=[nonfoot=[head=[cat=_,
+				       agree=[person=[first=_AW,
+						      second=_AX,
+						      third=_AY],
+					      count=[individual=_,
+						     kind=_BA,
+						     mass=_BB,
+						     generic=_BC],
+					      gender=[masculine=_,
+						      feminine=_,
+						      neuter=_],
+					      animacy=[animate=_BD,
+							human=_BE]],
+				       vform=[vfeatures=[finite=[tensed=_BI,
+								 participle=_BJ,
+								 infinitive=_BK,
+								 to_form=_BL],
+							 aux=_BM,
+							 active=_BN,
+							 view=[tense=[present=_,
+								      past=_,
+								      future=_,
+								      preterite=_,
+								      free=_],
+							       aspect=_BP],
+
+							 mood=[declarative=_BQ,
+							       imperative=_BR,
+							       interrogative=_BS,
+							       wh_interrogative=_BT,
+							       irreal=_BU,
+							       polarity=_BV,
+							       main=_BW],
+							 fullForm=_BX],
+					      subject=_BY,
+					      gerund=_BZ],
+				       nform=[case=[caseDefault=_,
+						    nom=_,
+						    acc=_,
+						    dat=_,
+						    gen=_,
+						    voc=_,
+						    pcase=_],
+					      date=_CB,
+					      referential=_CC,
+					      position=_CD],
+				       pform=_CE,
+				       adjform=_CF,
+				       marked=_CG,
+				       intensional=_],
+				 mcopy=[type=_CH, bracketed=_CI, weak=_CJ],
+				 minor=[mod=[target=_CK,
+					     result=_CL,
+					     modifiable=_CM],
+					intensified=_CN,
+					xlist=_CO,
+					conj=_CP,
+					specf=[kspec=[specified=_CQ, unspecified=_CR],
+					       specifier=_CS,
+					       def=[definite=_CT,
+						    indefinite=_CU,
+						    generic=_CV],
+					       card=_CW],
+					repaired=_CX,
+					comp=_CY,
+					negated=_CZ,
+					clitic=_DA,
+					topic=_DB]],
+			subcat=[args=_DC, fixed=_DD],
+			foot=[focus=_DE, wh=_DF, topicalised=_DG]],
+                phon=_AD,
+                morphology=[affixes=_AE,
+			    affix=_AF,
+			    empty=_,
+			    immediate=_,
+			    fstIn=_,
+			    fstOut=_,
+			    history=[typos=_AH,
+				     umlauted=_AI,
+				     branch=_AJ,
+				     redup=_AK,
+				     diacritics=[choices=[actvPres=_AL,
+							  actvPast=_AM,
+							  psvPast=_AN,
+							  psvPres=_AO],
+						 actualVowels=_AP],
+				     consonants=[targetConsonants=_,
+						 actualConsonants=_]],
+			    lextype=_AR,
+			    pause=_AS,
+			    assimilated=_AT],
+                meaning=[semantics=_DH,
+                         discourse=_DI,
+                         uses=[theta=_DJ,
+                               arg=_DK,
+                               predicative=_DL,
+                               modifier=_DM,
+			       degree=_,
+			       intersective=_,
+                               equivalence=_DN,
+                               theme=_DO,
+			       pconstraints=_],
+                         sort=_DP],
+                remarks=[translation=_,
+			 sense=_,
+			 failures=_DQ,
+			 score=_DS]]).
+
+signature(xbar=[v=_AU, n=_AV]).
+
+signature(num=[singular=_,
+	       dual=_,
+	       plural=_]).
+
+signature(frame=[group=_,
+		 parts=[branch=_,
+			lex=_,
+			plural=_,
+			umlaut=_],
+		 left=_]).
+/*
+lex_affix(X => LEX) :-
+    lextype(X => frame(_GROUP, [_BR, LEX, _PL, _UML], _LEFT)).
+*/
+
+% Lexical entries
+
+signature(lexentry=[entry=_, root=_, delayed=_, immediate=_]).
+
+% languages
+
+signature(lang=[english=_,
+		french=_,
+		spanish=_,
+		german=_,
+		greek=_,
+		malay=_,
+		arabic=_,
+		persian=_,
+		somali=_]).
+
+signature(fst=[prefix=_,
+	       postfix=_,
+	       trail=_,
+	       current=_,
+	       items=_,
+	       depth=_]).
+
+signature(character=[char=_,
+		     underlying=_,
+		     query=_,
+		     sukun=_,
+		     sound=[vc=[vowel=_,
+				diphthong=_,
+				long=_],
+			    stop=_,
+			    smooth=_,
+			    artic=[open=_,
+				   back=_,
+				   rounded=_],
+			    high=_,
+			    emphatic=_,
+			    hamza=[before=_, after=_]],
+		     syll=[syllpos=_,
+			   syllable=_],
+		     multiple=_,
+		     taa=_,
+		     shadda=_,
+		     inserted=_,
+		     used=_,
+		     position=[initial=_,
+			       final=_,
+			       next=_]]).
+
+signature(char=[representation=[grapheme=_, underlying=_, sampa=_],
+		query=_,
+		phoneme=[vc=[vowel=_,
+			     semivowel=_,
+			     diphthong=_,
+			     tanween=_,
+			     long=_,
+			     sukun=_,
+			     shadda=_],
+			 phar=_,
+			 artic=[stop=_, open=_, rounded=_, high=_, back=_, place=_, manner=_, emph=_, solar=_]],
+		syll=[syllpos=_,
+		      syllable=_],
+		cluster=_,
+		morpheme=_,
+		word=_,
+		utt=_]).
+	%	inserted=_]).
+
+signature(pos=[initial=_,
+	       middle=_,
+	       final=_,
+	       parent=_]).
+
+signature(syll=[open=_,
+		heavy=_,
+		stress=_,
+		phonemes=_]).

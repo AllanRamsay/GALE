@@ -1,0 +1,810 @@
+
+%%%% PARSE.PL %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+/****
+
+Parsing involves two steps: itemising the input string and combining
+the resulting words into phrases. Itemisation is done by
+string2signs/2, which is defined in
+STRUCTURE/lexicon.pl. Combination of words and phrases is done
+by parse/1. analyse/2 is the thing that links these two, and numerous
+other predicates (start/2, in/1, \ldots), invoke analyse/2.
+
+\medpara
+The parser is a chart parser, with edges asserted in the
+Prologdatabase. Because we want to retrieve edges as fast as possible,
+and because we very frequently want either only complete or only
+partial edges, we wrap them up inside \texttt{complete} or
+\texttt{partial} before we assert them. This speeds up retrieving just
+completes or partials, at the slight cost that if we don't know which
+we want then we have to do it disjunctively (for which we can use
+either/1).
+
+\medpara
+parse/1 does a bit of bookkeeping and adds zero items (zero pronoun,
+useful in most languages, zero copula for Somali, which probably ought
+to be done with an equivalence, as for Arabic) and calls
+initialise/3. initialise/3 goes back to things in
+STRUCTURE/lexicon.pl to look up the words in the lexical trie
+and add them to the agenda, and then starts working its way down the
+agenda.
+
+\medpara
+processAgenda/2 takes a sign off the agenda and uses addEdge/2 to put
+it intto the database. processAgenda/2 checkes to see whether the sign
+was partial or complete, and wraps it up appropriately. It also
+(slightly obscurely) returns it in its wrapper, so that the next bit
+can see very directly what kind of edge it is. combinations/2 then
+finds all the existing edges with which it can combine and collects
+the items that would result from each such combination. These are
+sorted and then added to the agenda, and then on we go.
+
+\medpara
+combinations/2 looks for five things: an item that this one will help
+saturate (done by combineCompleteAndPartial/2), an item that will help
+saturate this one (done by combinePartialAndComplete/2), an item that
+this one will modify, an item that will modify this one (both done by
+combineModAndTarget/4), and an equivalence rule (see
+STRUCTURE/equiv.pl). combineCompleteAndPartial/2 and
+combinePartialAndComplete/2 are extremely similar, and could have been
+written as a single predicate, but because this is so key to the
+performance of the system I've split them to take advantage of any
+slight optimisations that I can get by doing so. The two ways of using
+combineModAndTarget/4 are so similar that I haven't bothered there, so
+that's just one rule (see STRUCTURE/modifier.pl).
+
+\medpara
+combineCompleteAndPartial/2 and combinePartialAndComplete/2 are long,
+but essentially very simple. There's a long preamble which describes
+the two signs, extracts crucial features (like start and end
+positions), shares information between them, and describes what the
+result will look like. Then there's a couple of lines in the middle
+that actually look for the item. Then we check the spans to ensure
+that they're not overlapping, calculate start and end positions of the
+result, check to see if the argument was displaced (and if so whether
+we are happy about it). And then finally we call makeCombination/4 to
+have a good look at the result, and in particular to call filter/3
+(from STRUCTURE/filter.pl), which has contains some
+language-related tests.
+*/
+
+/*** newindex makes up a new unique counter for each edge ***/
+
+newindex(J) :-
+    current_index(I),
+    !,
+    J is I+1,
+    ((bound(X), J > X) ->
+        (throw(tooManyEdges));
+        (retract(current_index(I)),
+         assert(current_index(J)))).
+newindex(1) :-
+    assert(current_index(1)).
+
+/***
+clean_up removes temporary objects associated with the last parse
+from the database.
+***/
+
+clean_up :-
+    xabolish(textlength/1),
+    xabolish(textspan/1),
+    xabolish(lastWord/1),
+    xabolish(packed/2),
+    xabolish(sign/5), xabolish(complete/1),
+    xabolish(partial/1),
+    %% Don't reset the index if you're running a series of tests
+    (flag(runningTest) ->
+	true;
+	xabolish(current_index/1)),
+    %% I had the next line commented out, Helen had it in (31/07/01)
+    retractall(new_discourse),
+    xabolish(nonCompact/1).
+
+/*** Tidy up the database, read a sentence, call parse ***/
+    
+parse(WORDS) :-
+    current_language(CLANGUAGE),
+    length(WORDS, L),
+    assert(textlength(L)),
+    (flag(noTimers) -> true; statistics(walltime, _)),
+    (somali(CLANGUAGE) -> zeroCopula; true),
+    zeroPronoun,
+    underlying@LAST <-> '.',
+    (last(LAST, WORDS) ->
+	(K is L-1,
+	    zeroComma(K));
+	true),
+    !,
+    catch((initialise(0, WORDS, CLANGUAGE); true),
+	  foundOne,
+	  true),
+    !,
+    (current_index(I) ->
+	format("%%%% Parse completed - ~w edges ~n~n", [I]);
+	true),
+    (flag(noTimers) -> true; statistics(walltime, [_, T])),   
+    retractall(timeTaken(_)),
+    assert(timeTaken(T)),
+    format("%%%% Time taken: ~w milliseconds~n", [T]), 
+    (flag(latex) ->
+        (write('\\sent {\\SA} {'), writelist(WORDS), write('}'));
+        true).
+
+readPair(L1, L2) :-
+    set(moodless),
+    set(translationForm),
+    retractall(pair(_, _, _, _)),
+    in L1,
+    basic_interpretation(I1, _, _, _),
+    in L2,
+    basic_interpretation(I2, _, _, _),
+    assert(pair(L1, I1, L2, I2)).
+readPair(L1, TEXT1, L2, TEXT2) :-
+    call_residue((set(moodless),
+		  set(translationForm),
+		  retractall(pair(_, _, _, _)),
+		  analyse(TEXT1, L1),
+		  basic_interpretation(I1, _, _, _),
+		  analyse(TEXT2, L2),
+		  basic_interpretation(I2, _, _, _),
+		  assert(pair(L1, I1, L2, I2))),
+		 _R).
+
+analyse(ATOM) :-
+    analyse(ATOM, english).
+
+analyse(ATOM, L) :-
+    javaSetLanguage(L),
+    clean_up,
+    atom_codes(ATOM, CHARS),
+    string2signs(CHARS, TEXT),
+    %% unset(justWords),
+    unset(showBasicMeanings),
+    call_residue((parse(TEXT), showMeanings), _).
+
+newRule(STRING) :-
+    call_residue((clean_up,
+		  set(savePrologForm),
+		  (analyse(STRING, english) ->
+		      true;
+		      true),
+		  unset(savePrologForm)),
+		 _R).
+
+in(LANGUAGE, ATOM) :-
+    clean_up,
+    assert(cdiscourse(1)),
+    analyse(ATOM, LANGUAGE).
+    
+in LANGUAGE :-
+    clean_up,
+    assert(cdiscourse(1)),
+    format('Input a sentence in ~w~n', [LANGUAGE]),
+    call_residue((readAtom(ATOM),
+		  analyse(ATOM, LANGUAGE)),
+		 _).
+
+initialState(CLEARUP) :-
+    clean_up,
+    retractall(private(__, _)),
+    (clearDStates -> true; true),
+    ((CLEARUP, clearUp(_)) -> true; true),
+    store(utt(1), utt),
+    retractall(bound(_)),
+    (flag(noTimers) -> true; statistics(walltime, [_T1|_T11])).
+	
+start :-
+    readAtom(ATOM),
+    call_residue(start(ATOM, english), _).
+
+start(TEXT) :-
+    call_residue(start(TEXT, english), _).
+
+start(TEXT, LANGUAGE) :-
+    initialState(true),
+    next(TEXT, LANGUAGE).
+
+next :-
+    readAtom(TEXT),
+    next(TEXT).
+
+next(TEXT) :-
+    next(TEXT, english).
+
+next(newRule(RULE), LANGUAGE) :-
+    unset(justWords),
+    unset(showDStates),
+    !,
+    inSilence(newRule(RULE, LANGUAGE)).
+next(TEXT, LANGUAGE) :-
+    unset(justWords),
+    set(showDStates),
+    set(showBasicMeanings),
+    clean_up,
+    retract(utt(I)),
+    J is I+1,
+    store(utt(J), utt),
+    (flag(noTimers) -> true; statistics(walltime, [_T1|_T11])),
+    analyseAndUpdate(TEXT, LANGUAGE).
+
+showText :-
+    lastDState(D),
+    pretty(text:dstate@D).
+	
+analyseAndUpdate(TEXT, LANGUAGE) :-
+    call_residue((((analyse(TEXT, LANGUAGE), readyU) ->
+		   showText;
+		   (readyC('%%%% Sorry I didn''t understand'))),
+		   (flag(noTimers) -> true; statistics(walltime, [_T2|[T22]])),
+		   format('%%%% Time taken: ~w MILLISECONDS~n',[T22])), 
+		_R).
+
+arabicWords(WORD) :-
+    clean_up,
+    (retract(current_language(_)) -> true; true),
+    LANGUAGE <> arabic,
+    assert(current_language(LANGUAGE)),
+    underlying@X <-> WORD,
+    inSilence(parse([X])),
+    tableForms(WORD).
+arabicWords(_WORD).
+
+nextSentence(STRING) :-
+    clean_up,
+    retractall(new_discourse),
+    retractall(cdiscourse(_)),
+    robustParse(STRING).
+
+conversation(L) :-
+    unset(labelledTrees),
+    unset(translationForm),
+    unset(justWords),
+    format('%%%% NEW CONVERSATION %%%%%%%%%%%%%%~n', []),
+    conversation(L, true).
+
+conversation([H0 | T], FIRST) :-
+    retractall(test(_)),
+    assert(test(H0)),
+    (H0 = (H1=X) ->
+	true;
+	H1 = H0),
+    format('~w~n', H1),
+    (FIRST ->
+	start(H1);
+	next(H1)),
+    (nonvar(X) -> checkOutcome(X); true),
+    conversation(T, fail).
+conversation([], _FIRST).
+
+checkOutcome(P) :-
+    (outcome(P) ->
+	format('Expected outcome achieved~n', []);
+	(((test(DTEST), whichDTest(TESTSET)) ->
+	  assert(unexpectedOutcome(TESTSET, DTEST));
+	  true),
+	    format('!!!!!!!!!!! Expected outcome not achieved~n', []))).
+
+xmlResponse(D, RESPONSE2) :-
+    BFORM0 <-> bform:dstate@D,
+    (BFORM0 = utt(BFORM1, _) ->
+	true;
+	BFORM1 = "unknown"),
+    (speaker:dstate@D=computer ->
+	RESPONSE0 = text:dstate@D;
+	RESPONSE0 = 'OK'),
+    makeUnderlyingForm(RESPONSE0, RESPONSE1),
+    savedString(USER),
+    with_output_to_atom(xml(response,
+			    [speaker=computer, uttType=BFORM1],
+			    [userInput=USER, computerOutput=RESPONSE1]),
+			RESPONSE2).
+
+/***
+ZERO is a zero item. It is something that goes from I to I, for any I,
+with a span of 0 (because it contains no words) and is +compact
+(because it contains all the words -- namely none -- between its start
+and end). We know nothing more about it -- nothing about its
+category. Phrases that will accept a zero argument will fill in the
+details as required.
+***/
+
+zeroPronoun(ZERO) :-
+    ZERO <> [xzero, saturated],
+    +specified@ZERO,
+    +definite@ZERO,
+    create_mutable(0, score@ZERO),
+    current_language(language@ZERO),
+    assimilated@ZERO <-> left,
+    [assimilated, text, underlying]@core@ZERO <-> [assimilated, text, underlying]@ZERO,
+    positions@ZERO <-> positions@NP,
+    target@NP <> noun,
+    checkZero(ZERO),
+    NP <> np,
+    dir@target@NP <> xafter,
+    target@NP <> noun.
+
+zeroPronoun :-
+    zeroPronoun(ZERO),
+    newindex(index@ZERO),
+    assertWhen(complete(ZERO)).
+
+temp(START, END, SIGN) :-
+    START <-> start@SIGN, 
+    END <-> end@SIGN, 
+    either(SIGN).
+
+%% Fixing the number of args cuts out cases where we look for a complete
+%% when we know that it's unsaturated (and vv). Costs very little.
+either(X) :-
+    args@X <-> [],
+    complete(X).
+either(X) :-
+    args@X <->[_ | _],
+    partial(X).
+
+spanning_edge(X) :-
+    textspan(span@X),
+    +compact@X,
+    either(X).
+
+maxEnd(L, MX) :-
+    end@X <-> MX,
+    end@Y <-> MY,
+    cmember(X, L),
+    \+ (cmember(Y, L), MY > MX).
+
+openList(V) :-
+    var(V),
+    !.
+openList([_H | T]) :-
+    openList(T).
+
+initialise(I, [HD | TL], LANGUAGE, AGENDA0, AGENDA2) :-
+    J is I+1,
+    findWords(HD, I, LANGUAGE, J, SIGNS),
+    append(AGENDA0, SIGNS, AGENDA1),
+    (var(SIGNS) -> trace; true),
+    maxEnd(AGENDA1, M),
+    initialise(M, TL, LANGUAGE, AGENDA1, AGENDA2).
+initialise(_I, [], _LANGUAGE, AGENDA, AGENDA).
+
+setTextSpan(AGENDA) :-
+    cmember(X, AGENDA),
+    end@X <-> ENDX,
+    end@Y <-> ENDY,
+    \+ (cmember(Y, AGENDA), ENDY > ENDX),
+    SPAN is (1 << ENDX)-1,
+    assert(lastWord(ENDX)),
+    assert(textspan(SPAN)).
+addScores([]).
+addScores([H | T]) :-
+    score@H <-> S,
+    (var(S) -> create_mutable(0, S); true),
+    addScores(T).
+
+initialise(I, WORDS, LANGUAGE) :-
+    initialise(I, WORDS, LANGUAGE, [], AGENDA0),
+    addScores(AGENDA0),
+    setTextSpan(AGENDA0),
+    !,
+    qsort(AGENDA0, AGENDA1, [], lowerScore),
+    processAgenda(AGENDA1, _SPANNINGEDGE).
+
+/*
+    You can find an item that matches SIGN if
+        (i) it's been asserted,
+	(ii) it's equivalent to something that's been asserted,
+	or (iii) you're prepared to hallucinate it.
+*/
+
+
+/*
+    SIGN is a new sign. Try to extend it.
+
+*/
+
+
+properSpanningEdge(SIGN) :-
+    (flag(properSpanningEdges) ->
+	(np(SIGN); (s(SIGN), tensed_form(SIGN)); cat@SIGN = punct);
+	true).
+
+/***
+Check that what you're about to assert doesn't match something
+you've already got. If it does, store the new one as packed unless the
+old one was assumption-free and the new one isn't.
+***/
+
+%% Subsumption check is currently OUT. There have been times when it was
+%% required, but I can't remember the cases where there was a problem
+%%
+%% subsumption rather than just equality restored 03/08/05 for some
+%% rather obscure cases
+
+check_new(SIGN) :-
+    SIGN <> saturated,
+    index@PREVIOUS <-> IP,
+    [span, language, thread, sort, score, cat]@SIGN 
+    <-> [span, language, thread, sort, score, cat]@PREVIOUS,
+    syntax@SIGN <-> SYNSIGN,
+    syntax@PREVIOUS <-> SYNPREV,
+    span@SIGN <-> SPAN,
+    %% I've done a fairly thorough investigation, and it does not look 
+    %% as though using msubsume(SYNSIGN, SYNPREV) AFTER looking for old
+    %% signs rather than unifying them BEFORE the lookup slows things down,
+    %% and whilst we're not actually catching all that many packable signs,
+    %% packing does seem to save a small amount of time. So this is about as
+    %% good as I can get it.
+    !,
+    ((flag(packing), complete(PREVIOUS), msubsume(SYNSIGN, SYNPREV)) -> 
+	(assertWhen(packed(IP, SIGN)), fail);
+	(assertWhen(complete(SIGN)),
+	    (flag(showEdges) -> (profile(index@SIGN) -> true; true); true))),
+    ((flag(firstOneOnly), textspan(SPAN), properSpanningEdge(SIGN)) ->
+	throw(foundOne);
+	true).
+    
+check_new(SIGN) :-
+    index@PREVIOUS <-> IP,
+    [span, language, thread, sort, score, cat]@SIGN 
+    <-> [span, language, thread, sort, score, cat]@PREVIOUS,
+    syntax@SIGN <-> SYNSIGN,
+    syntax@PREVIOUS <-> SYNPREV,
+    ((flag(packing), partial(PREVIOUS), msubsume(SYNSIGN, SYNPREV)) -> 
+	(assertWhen(packed(IP, SIGN)), fail);
+	(assertWhen(partial(SIGN)),
+	    (flag(showEdges) -> (profile(index@SIGN) -> true; true); true))).
+lowerScore(X, Y) :-
+    get_mutable(SX, score@X),
+    get_mutable(SY, score@Y),
+    span@X <-> SPANX,
+    span@Y <-> SPANY,
+    (SX < SY ->
+	true;
+	(SX = SY, SPANY is SPANX /\ SPANY)).
+
+sortedInsert([], L, L) :-
+    !.
+sortedInsert(L, [], L).
+sortedInsert([H0 | T0], [H1 | T1], L2) :-
+    (lowerScore(H0, H1) ->
+	(sortedInsert(T0, [H1 | T1], L1),
+	    L2 = [H0 | L1]);
+	(sortedInsert([H0 | T0], T1, L1),
+	    L2 = [H1 | L1])).
+
+printScores([]).
+printScores([H | T]) :-
+    get_mutable(S, score@H),
+    format('~w ', S),
+    printScores(T).
+
+processAgenda([H | T], SPANNINGEDGE) :-
+    default(+realised@H),
+    (addEdge(H, K) ->
+	(flag(justWords) ->
+	    NEW = [];
+	    findallWithWhen(C, combinations(K, C), NEW));
+	NEW = []),
+    startTimer(sorting),
+    qsort(NEW, NEWSORTED, [], lowerScore),
+    sortedInsert(NEWSORTED, T, AGENDA1),
+    !,
+    stopTimer(sorting),
+    processAgenda(AGENDA1, SPANNINGEDGE).
+   
+addEdge(SIGN, partial(SIGN)) :-       %% Standard one (partial)
+    args@SIGN <-> [NEXT | _REST],
+    language@SIGN <-> language@NEXT,
+    !,
+    pre_defaults(NEXT),
+    storeNewEdge(SIGN).
+
+addEdge(SIGN, complete(SIGN)) :-      %% Standard one (complete)
+    SIGN <> saturated,
+    %% dummies to ensure that these features have a (possibly null) value
+    %% for the msubsumes check
+    intensified@SIGN <-> _INT,
+    type@SIGN <-> _TYPE,
+    post_defaults(SIGN),
+    storeNewEdge(SIGN).
+
+storeNewEdge(SIGN) :-
+    startTimer(storeNewEdge),
+    index@SIGN <-> INDEX,
+    newindex(INDEX),
+    span@SIGN <-> SPAN,
+    (textspan(SPAN) ->
+	(FOUND = true, format('%%%% Found one: ~w~n', [INDEX]));
+	true),
+    check_new(SIGN),
+    (nonvar(FOUND) ->
+        format('%%%% None like it. This one is no. ~w~n', [INDEX]);
+	true),
+    stopTimer(storeNewEdge).
+
+/***
+SIGN is an edge. Is it looking for X, is X looking for it?
+
+If the sign is complete, it can ONLY be combined with a partial that
+needs it.
+    
+If it's partial, then it could combine with a suitable complete to
+help saturate it.
+    
+Or (this is the flaky one) it could be combined with a partial that
+wanted it.  What constraints can we put on this? Maybe only things
+that are prepared to be arguments should be subject to it. Maybe only
+things that are VPs should be subject to it. Who knows?
+
+***/
+
+combinations(complete(SIGN), COMBINATION) :-
+    theta@SIGN <-> arg(_THETA),
+    combineCompleteAndPartial(SIGN, COMBINATION).
+combinations(partial(SIGN), COMBINATION) :-
+    combinePartialAndComplete(SIGN, COMBINATION).
+combinations(partial(SIGN), COMBINATION) :-
+    theta@SIGN <-> arg(_THETA),
+    combineCompleteAndPartial(SIGN, COMBINATION).
+
+/*
+    X is an edge. Is there already a Y who would like to modify it
+    or be modified by it?
+    
+    In either case the modifier must be complete, but the target may be
+    unsaturated if it is a VP.
+    
+*/
+
+%% First: Y is the target
+
+combinations(complete(X), COMBINATION) :-
+    X <> saturated,
+    +realised@X,
+    target@X <-> Y,
+    language@X <-> language@Y,
+    (K = complete(Y); (K = partial(Y))),
+    %% Is there a Y that needs X? 
+    combineModAndTarget(Y, X, K, COMBINATION).  
+
+%% Next two: Y is the modifier
+
+combinations(complete(X), COMBINATION) :-
+    Y <> saturated,
+    target@Y <-> X,
+    language@X <-> language@Y,
+    %% Is there a Y that needs X?
+    combineModAndTarget(X, Y, complete(Y), COMBINATION). 
+
+combinations(partial(X), COMBINATION) :-
+    Y <> saturated,
+    target@Y <-> X,
+    %% X <> verbal,
+    language@X <-> language@Y,
+    %% X needs a Y: is there one? 
+    combineModAndTarget(X, Y, complete(Y), COMBINATION).  
+
+%% SIGN is an edge. Can it be redescribed using an equivalence?
+
+combinations(K, X) :-
+    startTimer(<==>),
+    -value:def@zero@Y,
+    (K = complete(Y); (K = partial(Y), vp(Y))),
+    [language, positions, score, failures]@X 
+          <-> [language, positions, score, failures]@Y,
+    X <==> Y,
+    stopTimer(<==>),
+    dtrs@X <-> equivalence@X,
+    default(forms@X <-> forms@Y),
+    default(core@X <-> core@Y).
+
+findStart(SPAN, N, N) :-
+    0 is SPAN /\ (1 << (N-1)),
+    !.
+findStart(SPAN, N0, N2) :-
+    N1 is N0-1,
+    findStart(SPAN, N1, N2).
+    
+findEnd(SPAN, N, N) :-
+    0 is SPAN /\ (1 << N),
+    !.
+findEnd(SPAN, N0, N2) :-
+    N1 is N0+1,
+    findEnd(SPAN, N1, N2).
+
+shareWithDtr(COMPLETE, DTR) :-
+    [case, agree, finite, referential, wh, index, dir, positions, displaced, theta, specf, main, forms, comp]@COMPLETE 
+    <-> [case, agree, finite, referential, wh, index, dir, positions, displaced, theta, specf, main, forms, comp]@DTR.
+
+/***
+P0 is a partial edge looking for COMPLETE followed by REST. FIND
+specifies how to find the one that's missing.
+***/
+
+combinePartialAndComplete(P0, P1) :-
+    startTimer(combinePartialAndComplete),
+    [core, nonfoot, language, fixed, meaning]@P0 
+    <-> [core, nonfoot, language, fixed, meaning]@P1,
+    language@P0 <-> language@COMPLETE,
+    args@P0 <-> [COMPLETE | REST],
+    start@P0 <-> I1,
+    end@P0 <-> J1,
+    conj@COMPLETE <-> conj@DTR,
+    displaced@COMPLETE <-> DISP,
+    moved:dir@DISP <-> MOVED,
+    start@COMPLETE <-> I2,
+    end@COMPLETE <-> J2,
+    dir@COMPLETE <-> DIR,
+    start@P1 <-> I3,
+    end@P1 <-> J3,
+    span@P0 <-> SPAN1,
+    span@COMPLETE <-> SPAN2,
+    span@P1 <-> SPAN3,
+    xstart@COMPLETE <-> XS2,
+    xstart@P0 <-> XS1,
+    xstart@P1 <-> XS3,
+    xend@P0 <-> XE1,
+    xend@COMPLETE <-> XE2,
+    xend@P1 <-> XE3, 
+    compact@P1 <-> COMPACT1, 
+    before:dir@DIR <-> LDIR,
+    after:dir@DIR <-> RDIR,
+    before:dir@DISP <-> BDISP,
+    after:dir@DISP <-> ADISP,
+    (MOVED == - ->
+	(RDIR == - -> I1 = J2;
+	    LDIR == - -> J1 = I2;
+	    true);
+	true),
+    %% this where we look for a complete to help saturate this partial
+    either(COMPLETE),  
+    0 is SPAN1 /\ SPAN2,
+    %% The dtrs list includes the previous edge (so we can unpack packed ones
+    %% properly) AND the dtrs of of the previous one (so that we can inspect
+    %% the dtrs properly in filter, especially for WH-ness). It's a compromise,
+    %% but I think we need it.
+    dtrs@P1 <-> [DTR, prev(index@P0) | DTRS],
+    DTRS <-> dtrs@Q,
+    index@Q <-> index@P0,
+    DTRSP0 <-> dtrs@P0,
+    ((staticDtrs; DTRSP0 = []) ->
+	DTRS = DTRSP0;
+	trigger(DTRS, partial(Q))),
+    %% Suppose that COMPLETE was a zero item, and that there were triggers
+    %% that failed for both I1=J2 and J1=I2. Then you'd fall through to
+    %% the third case with I2 uninstantiated, which wouldn't be very nice.
+    %% But zero items can't move, so we shouldn't be considering them in 
+    %% situations where they fail both the initial tests. Allan, 14/09/06
+    ((I1 = J2, LDIR = +) ->
+	(MOVED = (-));
+	(J1 = I2, RDIR = +) ->
+	(MOVED = (-));
+	(nonvar(I2), I1 > I2) -> 
+	(BDISP = +, MOVED = + /*, COMPACT2 = + */);
+	(ADISP = +, MOVED = + /*, COMPACT2 = + */)),
+    min(XS1, XS2, XS3),
+    max(XE1, XE2, XE3),
+    SPAN3 is SPAN1 \/ SPAN2,
+    findStart(SPAN3, I1, I3),
+    findEnd(SPAN3, J1, J3),
+    countZeros(span@P1, xstart@P1, ZEROS, +),
+    (ZEROS == 0 ->
+	COMPACT1 = +;
+	(COMPACT1 = -,
+	    (ZEROS < 2 -> true; penalise(P1, 50)))),
+    shareWithDtr(COMPLETE, DTR),
+    stopTimer(combinePartialAndComplete),
+    makeCombination(P0, REST, COMPLETE, P1).
+
+combineCompleteAndPartial(COMPLETE, P1) :-
+    startTimer(combineCompleteAndPartial),
+    [core, nonfoot, language, fixed, meaning]@P0 
+    <-> [core, nonfoot, language, fixed, meaning]@P1,
+    language@P0 <-> language@COMPLETE,
+    args@P0 <-> [COMPLETE | REST],
+    start@P0 <-> I1,
+    end@P0 <-> J1,
+    shareWithDtr(COMPLETE, DTR),
+    conj@COMPLETE <-> conj@DTR,
+    displaced@COMPLETE <-> DISP,
+    moved:dir@DISP <-> MOVED,
+    start@COMPLETE <-> I2,
+    end@COMPLETE <-> J2,
+    dir@COMPLETE <-> DIR,
+    start@P1 <-> I3,
+    end@P1 <-> J3,
+    span@P0 <-> SPAN1,
+    span@COMPLETE <-> SPAN2,
+    span@P1 <-> SPAN3,
+    xstart@COMPLETE <-> XS2,
+    xstart@P0 <-> XS1,
+    xstart@P1 <-> XS3,
+    xend@P0 <-> XE1,
+    xend@COMPLETE <-> XE2,
+    xend@P1 <-> XE3, 
+    compact@P1 <-> COMPACT1,
+    before:dir@DIR <-> LDIR,
+    after:dir@DIR <-> RDIR,
+    before:dir@DISP <-> BDISP,
+    after:dir@DISP <-> ADISP,
+    %% this is where we look for a partial that needs this one
+    partial(P0),
+    (MOVED == - ->
+	(RDIR == - -> I1 = J2; LDIR == - -> J1 = I2; true);
+	true),
+    0 is SPAN1 /\ SPAN2,
+    dtrs@P1 <-> [DTR, prev(index@P0) | DTRS],
+    DTRS <-> dtrs@Q,
+    index@Q <-> index@P0,
+    DTRSP0 <-> dtrs@P0,
+    ((staticDtrs; DTRSP0 = []) ->
+	DTRS = DTRSP0;
+	trigger(DTRS, partial(Q))),
+    ((I1 = J2, LDIR = +) ->
+	(MOVED = -);
+	(J1 = I2, RDIR = +) ->
+	(MOVED = -);
+	I1 > I2 ->
+	(BDISP = +, MOVED = +);
+	(testNoWH(COMPLETE), ADISP = +, MOVED = +)),
+    min(XS1, XS2, XS3),
+    max(XE1, XE2, XE3),
+    SPAN3 is SPAN1 \/ SPAN2,
+    findStart(SPAN3, I1, I3),
+    findEnd(SPAN3, J1, J3),
+    countZeros(span@P1, xstart@P1, ZEROS, +),
+    (ZEROS == 0 ->
+	COMPACT1 = +;
+	(COMPACT1 = -,
+	    (ZEROS < 2 -> true; penalise(P1, 50)))),
+    stopTimer(combineCompleteAndPartial),
+    makeCombination(P0, REST, COMPLETE, P1).
+
+makeCombination(P0, ARGS, COMPLETE, P1) :-
+    startTimer(penalties),
+    failures@P1 <-> failures@P0+failures@COMPLETE,
+    get_mutable(S0, score@P0),
+    get_mutable(S1, score@COMPLETE),
+    S is S0+S1,
+    penalise(P1, S),
+    stopTimer(penalties),
+    startTimer(sort_args),
+    sort_args(P1, ARGS, args@P1),
+    stopTimer(sort_args),
+    filter(P0, COMPLETE, P1).
+
+/*
+compact(I, J, SPAN) :-
+    SPAN is ((1 << (J-I))-1) << I.
+*/
+
+compact(I, _J, SPAN0) :-
+    SPAN1 is (SPAN0 >> I),
+    countZeros(SPAN1, 0, +).
+
+countZeros(SPAN0, I, Z, +) :-
+    SPAN1 is (SPAN0 >> I),
+    countZeros(SPAN1, Z, +).
+
+countZeros(0, 0, _) :-
+    !.
+countZeros(SPAN0, Z1, +) :-
+    !,
+    X is SPAN0 /\ 1,
+    SPAN1 is (SPAN0 >> 1),
+    (X == 0 ->
+	(countZeros(SPAN1, Z0, -),
+	    Z1 is Z0+1);
+	countZeros(SPAN1, Z1, +)).
+countZeros(SPAN0, Z1, -) :-
+    !,
+    X is SPAN0 /\ 1,
+    SPAN1 is (SPAN0 >> 1),
+    (X == 1 ->
+	countZeros(SPAN1, Z1, -);
+	countZeros(SPAN1, Z1, +)).
+    
+iscompact(P) :-
+    compact(xstart@P, xend@P, span@P).

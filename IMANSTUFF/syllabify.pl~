@@ -1,0 +1,517 @@
+:- multifile sig/2.
+
+syllabify(S0, S1, S4, RE):-
+	string2chars1(S0, S1),
+	remsukuns1(S1, S2),
+	fixboundaries1(S2, S3),
+	fixTanween1(S3,S4),
+	fixHamza1(S4, S5),
+	markSyllables(S5),
+	splitSyllables(S5, S6),
+	 findall([initial:pos@syllpos:char@X, grapheme:char@X], (member(X, S5), (sound1(SOUND, X) -> true; fail)), S7),   % 
+	list_string1(S7, RE).
+
+
+string2chars1([H | T], CHARSN) :-
+	atom(H),
+	!,
+	rcharacters([H | T], CHARSN).
+string2chars1(STRING, CHARS) :-
+	findall(A, (member(C, STRING), atom_chars(A, [C])), ATOMS),
+	string2chars1(ATOMS, CHARS).
+
+listOfAtomsToString1([], []).                       %%% for syllabify only
+listOfAtomsToString1([[F, H0] | T0], C) :-
+	atom_codes(H0, H1),
+  	(F= + ->
+  	 append( "##",[] ,  F1);
+  	 true),
+  	listOfAtomsToString1(T0, T1),
+  	appendAll([F1, H1,  T1], C).
+
+list_string1(List, String) :-
+  	listOfAtomsToString1(List, Codes),
+  	atom_codes(String, Codes).
+
+invsound1(X, Y) :-
+	sound1(Y, X).
+
+
+fixHamza1([], []).       %%% For mad Alif, Extra Alid after group wAw, glides, and adding 'a' to the difinite article at the beginning of the utterance
+
+
+fixHamza1([C1 | T0], [C1, V | T1]) :- %%% For mad Alif
+ 	C1 <> invsound1('|'),
+ 	V <> invsound1('A'),
+   	!,
+   	fixHamza1(T0, T1).
+
+fixHamza1([U, W, A| T0], [LW | T1]) :-  %%for extra 'A' after group waw
+ 	U <> invsound1(u),
+ 	W <> [grapheme=w, +long, -open, +rounded ]:char,
+ 	A <> invsound1('A'),
+ 	+final:pos@word:char@A,
+ 	!,
+ 	LW <> [grapheme=w, +long, +vowel, -open, +rounded]:char,
+	word:char@A <-> word:char@LW,
+   	fixHamza1(T0, T1).
+
+
+fixHamza1([SA, W, S, A| T0], [SA, W1 | T1]) :-          %%for extra 'A' after group waw in cases like 'daEawoA'
+	SA <> invsound1(a),
+	W <> invsound1(w),
+	S <> invsound1(o),
+ 	A <> invsound1('A'),
+ 	+final:pos@word:char@A,
+	!,
+	W1 <> invsound1(w),
+	word:char@A <-> word:char@W1,
+
+   	fixHamza1(T0, T1).
+
+
+
+fixHamza1([A, L, C | T0], [A, Aa, L, C | T1]) :-	%%% To allow the words at the beginning of the utterance%%% %%This is the other part of the rule in fixTanween%%
+   	A <> invsound1('A'),
+  	+initial:pos@utt:char@A,
+   	L <> invsound1(l),
+   	(C <> [-vowel]:char;
+	 C <> [+semivowel]:char),
+   	Aa <> invsound1(a),
+	-final:pos@word:char@Aa,
+     	!,
+     	fixHamza1(T0, T1).
+
+
+fixHamza1([H| T0], [H| T1]) :-
+ 	fixHamza1(T0, T1).
+
+
+
+
+fixboundaries1(TXT0, TXT1) :-
+  	fixuboundaries1(TXT0, +),
+	fixwboundaries1(TXT0, TXT1).
+
+
+fixuboundaries1([],  _).
+fixuboundaries1([H | T0], I) :-
+	I <-> initial:pos@utt:char@H,
+  	(I = + -> initial:pos@word:char@H = +; true),
+   	fixuboundaries1(T0, -).
+
+fixwboundaries1([],  []).
+fixwboundaries1([Y, X | T0], T1):-
+  	+initial:pos@word:char@X,
+	grapheme:char@Y <-> ' ',
+	!,
+  	fixwboundaries1([X | T0], T1).
+fixwboundaries1([X, Y | T0], [X |T1]):-
+	grapheme:char@Y <-> ' ',
+   	+final:pos@word:char@X,
+  	default(-initial:pos@word:char@X),
+ 	!,
+   	fixwboundaries1([Y | T0], T1).
+fixwboundaries1([H | T0], [H | T1]) :-
+  	default(-initial:pos@word:char@H),
+	(T0 = [] ->
+	 +final:pos@word:char@H;
+	 default(-final:pos@word:char@H)),
+	fixwboundaries1(T0, T1).
+
+
+remsukuns1([], []).                                 
+
+remsukuns1([W, S, A|T0],[W, S, A|T1]):-          %%% to avoid removing sukun from words like (daEawoA)
+	W <> invsound1(w),
+	S <> invsound1(o),
+	A <> invsound1('A'),
+	!,
+	remsukuns1(T0, T1).
+
+remsukuns1([S | L0], [S | L1]):-
+     	-sukun:char@S,
+     	!,
+     	remsukuns1(L0, L1).
+remsukuns1([_ | L0], L1) :-
+     	remsukuns1(L0, L1).
+
+
+fixTanween1([], []).
+fixTanween1([X, A, L, C | T0], [X, A, Aa, L, C | T1]) :- %% We need to apply this rule before removing the spaces This rule is devided into to steps one in (fixTamween) and the other in (fixHmaza)
+    	(X <> shortV; sound1(' ', X)),
+    	A <> invsound1('A'),
+    	L <> invsound1(l),
+    	Aa <> invsound1(a),
+    	(C <> [+semivowel]:char; C <> [-vowel]:char),
+      	!,
+      	fixTanween1(T0, T1).
+
+fixTanween1([H| T0], [H| T1]) :-
+ 	fixTanween1(T0, T1).
+
+onset1(X) :-
+	S <-> syllpos:char@X,
+	+initial:pos@S,
+	-middle:pos@S,
+	-final:pos@S.
+
+nucleus1(X) :-
+	-initial:pos@syllpos:char@X,
+	+middle:pos@syllpos:char@X,
+	-final:pos@syllpos:char@X.
+
+coda1(X) :-
+	-initial:pos@syllpos:char@X,
+	-middle:pos@syllpos:char@X,
+	+final:pos@syllpos:char@X.
+
+ %%%%% Vowels features %%%%%%%
+
+vowel1(X) :-
+ 	X <> [+vowel]:char.
+
+consonant1(X) :-
+ 	X <> [-vowel]:char.
+
+longV1(X) :-
+ 	X <> [vowel, +long]:char.
+
+shortV1(X) :-
+ 	X <> [vowel, -long]:char.
+
+
+
+
+ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ %%%%%%%%%% SOUNDS FEATURES%%%%%%%%%%%%
+
+sound1(a, C) :-
+	grapheme:char@C <-> a,
+	sampa:char@C <-> a, 
+	C <> [openV, unroundV, charDefaults]:char.
+
+sound1('a^', C) :-
+	grapheme:char@C <-> a,
+	sampa:char@C <->'a^', 
+	C <> [openV, unroundV, +phar, charDefaults]:char.
+
+sound1(u, C) :-
+	grapheme:char@C <-> u,
+	sampa:char@C <->u, 
+	C <> [closeV, roundV, charDefaults]:char.
+
+sound1('u^', C) :-
+	grapheme:char@C <-> u,
+	sampa:char@C <-> 'u^', 
+	C <> [closeV, roundV, +phar, charDefaults]:char.
+
+
+sound1(i, C) :-
+	grapheme:char@C <-> i,
+	sampa:char@C <-> i, 
+	C <> [closeV, unroundV, charDefaults]:char.
+
+sound1('i^', C) :-
+	grapheme:char@C <-> i,
+	sampa:char@C <-> 'i^', 
+	C <> [closeV, unroundV, +phar, charDefaults]:char.
+
+
+sound1('A', C) :-
+ 	grapheme:char@C <-> 'A',
+	sampa:char@C <-> aa,
+  	C <>[+vowel, +long, +open, -rounded, manner=glide, charDefaults ]:char.
+	
+
+sound1('A^', C) :-
+	grapheme:char@C <-> 'A',
+	 sampa:char@C <-> 'aa^',
+ 	C <>[+vowel, +long, +open, -rounded, +phar, manner=glide, charDefaults ]:char.
+
+sound1('Y', C) :-
+	grapheme:char@C <-> 'Y',
+ 	sampa:char@C <-> aa,
+ 	C <> [longV, openV, unroundV, charDefaults]:char.
+
+sound1(y, C) :-
+	grapheme:char@C <-> y,
+ 	sampa:char@C <-> S,
+ 	C <> [vowel=V, +semivowel, place=palatal, manner=glide, -open, -rounded, +long, charDefaults]:char,
+	trigger(V, (V = - -> S = y; S = ii)).
+
+sound1('y^', C) :-
+	grapheme:char@C <-> 'y^',
+ 	sampa:char@C <-> S,
+ 	C <> [vowel=V, +semivowel, place=palatal, manner= glide, -open, -rounded, +long, +phar, charDefaults]:char,
+	trigger(V, (V = - -> S = y; S = 'ii^')).
+
+sound1(w, C) :-
+	grapheme:char@C <-> w,
+ 	sampa:char@C <-> S,
+ 	C <> [vowel=V, +semivowel, place=labiovelar, manner= glide, -open, +rounded, +long, charDefaults]:char,
+	trigger(V, (V = - -> S = w; S = uu)).
+
+sound1('w^', C) :-
+	grapheme:char@C <-> 'w^',
+ 	sampa:char@C <-> S,
+ 	C <> [vowel=V, +semivowel, place=labiovelar, manner= glide, -open, +rounded, +long, +phar, charDefaults]:char,
+	trigger(V, (V = - -> S = w; S = 'uu^')).
+
+sound1(b, C) :-
+	grapheme:char@C <-> b,
+	sampa:char@C <-> b, 
+	C <>[place=bilabial, stopC,  charDefaults]:char.
+
+sound1(t, C) :-
+	grapheme:char@C <-> t,
+	sampa:char@C <-> t, 
+	C <>[alvstop, +solar, charDefaults]:char.
+
+sound1(v, C) :-
+	grapheme:char@C <-> v,
+	sampa:char@C <-> v,
+	C <>[dentfric, +solar, charDefaults]:char.
+
+sound1(j, C) :-
+	grapheme:char@C <-> j,
+	sampa:char@C <-> j, 
+	C <>[postalv, charDefaults]:char.
+
+sound1('H', C) :-
+	grapheme:char@C <-> 'H',
+ 	sampa:char@C <-> 'h^',
+ 	C <>[pharfric, charDefaults]:char.
+
+sound1(x, C) :-
+	grapheme:char@C <-> x,
+	sampa:char@C <-> x, 
+ 	C <> [uvufric, charDefaults]:char.
+
+sound1(d, C) :-
+	grapheme:char@C <-> d,
+	sampa:char@C <-> d, 
+ 	C <> [alvstop, +solar, charDefaults]:char.
+
+sound1(*, C) :-
+	grapheme:char@C <-> '*',
+ 	sampa:char@C <-> 'D^',
+ 	C <> [dentfric, +solar, charDefaults]:char.
+
+sound1(r, C) :-
+	grapheme:char@C <-> r,
+	sampa:char@C <-> r, 
+ 	C <> [alvtrill, +solar, charDefaults]:char.
+
+sound1('r^', C) :-
+ 	grapheme:char@C <-> 'r^',
+	sampa:char@C <-> 'r^', 
+ 	C <> [alvtrill, +phar, +solar, charDefaults] :char.
+
+sound1(z, C) :-
+	grapheme:char@C <-> z,
+	sampa:char@C <-> z, 
+ 	C <> [alvfric, +solar, charDefaults]:char.
+
+sound1(s, C) :-
+	grapheme:char@C <-> s,
+	sampa:char@C <-> s, 
+ 	C <> [alvfric, +solar, charDefaults]:char.
+
+sound1($, C) :-
+	grapheme:char@C <-> '$',
+ 	sampa:char@C <-> 'S^',
+ 	C <> [postalv, +solar, charDefaults]:char.
+
+sound1('S', C) :-
+	grapheme:char@C <-> 'S',
+ 	sampa:char@C <-> 's^',
+ 	C <> [alvfric, +emph, +solar, charDefaults]:char.
+
+sound1('D', C) :-
+	grapheme:char@C <-> 'D',
+ 	sampa:char@C <-> 'd^',
+ 	C <> [alvstop, +emph, +solar, charDefaults]:char.
+
+sound1('T', C) :-
+	grapheme:char@C <-> 'T',
+ 	sampa:char@C <-> 't^',
+ 	C <> [alvstop, +emph, +solar, charDefaults]:char.
+
+sound1('Z', C) :-
+	grapheme:char@C <-> 'Z',
+ 	sampa:char@C <-> 'z^',
+ 	C <> [dentfric, +emph, +solar, charDefaults]:char.
+
+sound1('E', C) :-
+	grapheme:char@C <-> 'E',
+ 	sampa:char@C <-> 'E^',
+ 	C <>[pharfric, charDefaults]:char.
+
+sound1(g, C) :-
+	grapheme:char@C <-> g,
+	sampa:char@C <-> g, 
+ 	C <> [uvufric, charDefaults]:char.
+
+sound1(f, C) :-
+	grapheme:char@C <-> f,
+	sampa:char@C <-> f, 
+ 	C <> [place=labiodental, fricC, charDefaults]:char.
+
+sound1(q, C) :-
+	grapheme:char@C <-> q,
+	sampa:char@C <-> q, 
+ 	C <> [place=uvular, stopC, charDefaults]:char.
+
+sound1(k, C) :-
+	grapheme:char@C <-> k,
+	sampa:char@C <-> k, 
+ 	C <> [place=velar, stopC, charDefaults] :char.
+
+sound1(l, C) :-
+	grapheme:char@C <-> l,
+	sampa:char@C <-> l, 
+ 	C <> [alvlateral, +solar, charDefaults] :char.
+
+sound1('l^', C) :-
+  	grapheme:char@C <-> 'l^',
+	sampa:char@C <-> 'l^', 
+ 	C <> [alvlateral, +solar, +phar, charDefaults] :char.
+
+sound1(m, C) :-
+	grapheme:char@C <-> m,
+	sampa:char@C <-> m, 
+ 	C <> [place=bilabial, nasalC, charDefaults]:char.
+
+
+sound1(n, C) :-
+	grapheme:char@C <-> n,
+	sampa:char@C <-> n, 
+ 	C <> [alvdent, nasalC, +solar, charDefaults]:char.
+
+sound1('M' , C) :-
+	grapheme:char@C <-> 'M',
+	sampa:char@C <-> 'M', 
+ 	C <> [place=nasallabiodental, nasalC, +solar, charDefaults]:char.
+
+sound1(e , C) :-
+	grapheme:char@C <-> e,
+	sampa:char@C <-> e, 
+ 	C <> [place=nasalpalatal, nasalC, +solar, charDefaults]:char.
+
+sound1(c, C) :-
+ 	grapheme:char@C <-> c,
+ 	sampa:char@C <-> c, 
+  	C <> [place=nasalvelar, nasalC, +solar, charDefaults]:char.
+
+sound1(h, C) :-
+	grapheme:char@C <-> h,
+	sampa:char@C <-> h, 
+ 	C <> [place=glottal, fricC, charDefaults]:char.
+
+sound1('Q', C) :-
+ 	grapheme:char@C <-> 'Q',       
+ 	sampa:char@C <-> 'Q',
+	C <> [place=glottal, stopC, charDefaults]:char.
+
+sound1('\'', C) :-
+ 	grapheme:char@C <-> '\'',        %('Q';'>';'&';'<';'}'), 
+ 	sampa:char@C <-> 'Q',
+	C <> [place=glottal, stopC, charDefaults]:char.
+
+sound1('>', C) :-
+ 	grapheme:char@C <->'>',    
+ 	sampa:char@C <-> 'Q',
+	C <> [place=glottal, stopC, charDefaults]:char.
+
+sound1('&', C) :-
+ 	grapheme:char@C <->'&',      
+ 	sampa:char@C <-> 'Q',
+	C <> [place=glottal, stopC, charDefaults]:char.
+
+sound1('<', C) :-
+ 	grapheme:char@C <->'<',      
+ 	sampa:char@C <-> 'Q',
+	C <> [place=glottal, stopC, charDefaults]:char.
+
+sound1('}', C) :-
+ 	grapheme:char@C <->'}',     
+ 	sampa:char@C <-> 'Q',
+	C <> [place=glottal, stopC, charDefaults]:char.
+
+sound1('|', C) :-
+  	grapheme:char@C <->'|',      
+  	sampa:char@C <-> 'Q',
+ 	C <> [place=glottal, stopC, charDefaults]:char.
+
+% sound1('|', C) :-
+%   	grapheme:char@C <-> '|',
+%    	sampa:char@C <-> 'Qaa',
+%    	C <> [place=glottal, manner=stop, charDefaults]:char.
+
+
+sound1('`', C) :-
+ 	grapheme:char@C <->'`',      
+ 	sampa:char@C <-> 'aa',
+	C <>[longV, +open, -rounded, charDefaults ]:char.
+
+sound1('`^', C) :-
+ 	grapheme:char@C <->'`^',      
+ 	sampa:char@C <-> 'aa^',
+	C <>[longV, +open, -rounded, +phar, charDefaults ]:char.
+
+sound1('F', C) :-
+	grapheme:char@C <-> 'F',
+% 	sampa:char@C <-> 'an',
+	tanween:char@C <-> *fatH.
+%	C <> [+vowel, charDefaults]:char.
+
+% sound1('F', C) :-
+% 	grapheme:char@C <-> 'F',
+%  	sampa:char@C <-> 'a^n',
+% 	tanween:char@C <-> *fatH,
+% 	C <> [+vowel, +phar, charDefaults]:char.
+
+sound1('K', C) :-
+	grapheme:char@C <-> 'K',
+ %	sampa:char@C <-> 'in',
+ 	tanween:char@C <-> *kasr.
+%	C <> [+vowel, charDefaults]:char.
+
+% sound1('K', C) :-
+% 	grapheme:char@C <-> 'K',
+%  	sampa:char@C <-> 'i^n',
+%  	tanween:char@C <-> *kasr,
+% 	C <> [+vowel, +phar, charDefaults]:char.
+
+
+sound1('N', C) :-
+	grapheme:char@C <-> 'N',
+ %	sampa:char@C <-> 'un',
+ 	tanween:char@C <-> *dam.
+%	C <> [+vowel,  charDefaults]:char.
+
+% sound1('N', C) :-
+% 	grapheme:char@C <-> 'N',
+%  	sampa:char@C <-> 'u^n',
+%  	tanween:char@C <-> *dam,
+% 	C <> [+vowel, +phar, charDefaults]:char.
+
+sound1(o, C) :-
+	grapheme:char@C <-> o,
+ %	sampa:char@C <-> ' ',
+ 	C <>[+sukun, +vowel, charDefaults]:char.
+
+sound1(p, C):-
+	grapheme:char@C <-> p,
+	C <>[consonant, charDefaults]:char.
+
+sound1('~', C):-
+	grapheme:char@C <-> '~',
+	C <>[+shadda, -vowel, -open,  charDefaults]:char.
+
+sound1(' ', C):-
+ 	grapheme:char@C <-> ' ',
+	sampa:char@C <-> ' ',
+ 	C <>[-vowel, charDefaults]:char.
+	

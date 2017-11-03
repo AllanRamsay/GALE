@@ -1,0 +1,14 @@
+We had a problem with
+
+sentence("*/test-SYRIANTV_NEWS25_ARB_20070403_162800-102", "bwrAl
+Allayyu bsvHymsvl raqman xamsapan wEsvXsvryn waHAwil fyhA mannan
+nAHiyapan AlyasAru")
+
+because there is a rule that wants to keep re-applying itself. It's
+the "Al Allayu" that causes the problem -- it's OK if I manually
+substitute "Al Alayyu", other instances of "...All..." don't cause a
+problem.
+
+The original generation of these things included "ii", "uu", "aA". I
+had to substitute "y", "w", "A" for them: which is pretty stupid,
+because I then just re-recognise them as "ii" and "uu".
