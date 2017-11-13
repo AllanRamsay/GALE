@@ -41,14 +41,14 @@ space = re.compile("\s+")
 def singlespaces(s):
     return space.sub(" ", s)
 
-def clean(d, targets=["data", "training"]):
+def clean(d, targets=["data", "training", "genfiles"]):
     allfiles = os.listdir(d)
     if isinstance(targets, str):
         targets = [targets]
     files = {"data": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
              "wav": map(re.compile, ["wav", 'mfc*']),
-             "genfiles": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf']),
-            "training": map(re.compile, ['aligned.mlf', 'hmm.*', 'tiedlist', 'wdnet', 'train.scp', 'wintri.mlf', 'dict-tri', 'mktri.hed', 'proto.txt', 'mktri.led', 'flog', 'sil.hed', 'tree.hed', 'fulllist', 'stats', 'trees', 'gram.txt', 'triphones1'])}
+             "genfiles": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf', 'wdnet']),
+            "training": map(re.compile, ['aligned.mlf', 'hmm.*', 'tiedlist', 'train.scp', 'wintri.mlf', 'dict-tri', 'mktri.hed', 'proto.txt', 'mktri.led', 'flog', 'sil.hed', 'tree.hed', 'fulllist', 'stats', 'trees', 'gram.txt', 'triphones1'])}
     for target in targets:
         for t in files[target]:
             for f in allfiles:
@@ -67,10 +67,10 @@ def wavlength(fname):
         t = 0.0
         for i, w in enumerate(os.listdir(fname)):
             if w.endswith(".wav"):
-                t += wavlength(os.path.join(fname, w))
+                t += wavlength(os.path.join(os.getcwd(), fname, w))
         return t
     else:
-        x = execute("sox %s -n stat"%(fname))
+        x = subprocess.Popen(("sox %s -n stat"%(fname)).split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
         return float(lengthpattern.search(x[1]).group('length'))
 
 ##################################################################
@@ -234,14 +234,14 @@ def HTKFriendly(text0):
             text0 = text0.replace(c, HTKDICT[c])
         return text0
 
-def htkformat_dictionary(dict, exptdir, dictfile="dict", useMada=0, N=0, useFixedDict="multi"):
-    print "htkformat_dictionary(%s, %s%s.txt)"%(exptdir, dictfile, N)
-    if N == 1:
+def htkformat_dictionary(dict, exptdir, dictfile="dict", useMada=0, D=0, useFixedDict="multi", N=sys.maxint):
+    print "htkformat_dictionary(%s, %s%s.txt)"%(exptdir, dictfile, D)
+    if D == 1:
         sp = " sp"
     else:
         sp = ""
     m = 0
-    with safeout("%s/%s-%s-%s.txt"%(exptdir, dictfile, useMada, N), 'w') as write:
+    with safeout("%s/%s-%s-%s-%s.txt"%(exptdir, dictfile, useMada, N, D), 'w') as write:
         for key in sorted(dict.iterkeys()):
             if key != '!ENTER' and key != '!EXIT' and key != 'silence': # to prevent putting their vales ('sil') as phones 
                 entries = sorted(dict[key])
@@ -249,7 +249,7 @@ def htkformat_dictionary(dict, exptdir, dictfile="dict", useMada=0, N=0, useFixe
                     m += 1
                 for value in entries:
                     write('%s\t%s%s\n'%(key, value, sp))
-                    if useFixedDict == "fixed" or N == 0:
+                    if useFixedDict == "fixed" or D == 0:
                         break
             else:
                 write('%s\t%s\n'%(key, 'sil'))
@@ -391,14 +391,17 @@ $SENTENCE = (%s);
 
 def makeBigramGrammar(d=".", dfile="dict0.txt", prompts=False, gram=False):
     s = set()
-    with safeout(os.path.join(d, "wlist")) as write:
-        for l in open(os.path.join(d, dfile)):
-            w = l.split()[0]
-            if not w in s:
-                write(w+"\n")
-                s.add(w)
-    execute("HLStats -b %s/bigfn -o %s/wlist %s/words.mlf"%(d, d, d))
-    execute("HBuild -n %s/bigfn %s/wlist %s/wdnet"%(d, d, d))
+    if os.path.exists("%s/wdnet"%(d)):
+        print "Using existing wdnet"
+    else:
+        with safeout(os.path.join(d, "wlist")) as write:
+            for l in open(os.path.join(d, dfile)):
+                w = l.split()[0]
+                if not w in s:
+                    write(w+"\n")
+                    s.add(w)
+        execute("HLStats -b %s/bigfn -o %s/wlist %s/words.mlf"%(d, d, d))
+        execute("HBuild -n %s/bigfn %s/wlist %s/wdnet"%(d, d, d))
 
 def readPrompts(prompts):
     if not "\n" in prompts:
@@ -530,12 +533,12 @@ SPATTERN = re.compile(";;; SENTENCE(?P<sentence>.*?)SENTENCE BREAK", re.DOTALL)
 WPATTERN = re.compile("WORD (@@LAT@@)?(?P<word>\S*)\s.*?--------------", re.DOTALL)
 DPATTERN = re.compile(".*SVM_PREDICTIONS:\s*(@@LAT@@)?\S*\s*diac:(?P<diac>\S*)\s.*?((?P<gloss>gloss:\s*\S*)|(?P<none>NO-ANALYSIS)).*", re.DOTALL)
    
-def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint, pattern=False):
+def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint, pattern=False, wavfiles=False, wavtime=False):
     sentences = []
     if os.path.isdir(ifile):
         for p, d, files in os.walk(ifile):
             for f in files:
-                N, l = readRawMada(os.path.join(p, f), N=N, pattern=pattern)
+                N, l = readRawMada(os.path.join(p, f), N=N, pattern=pattern, wavfiles=wavfiles, wavtime=wavtime)
                 sentences += l
                 if N <= 0:
                     return N, sentences
@@ -573,29 +576,35 @@ def readRawMada(ifile="TEMP/originalprompts.segments.mada", N=sys.maxint, patter
                     sentences.append(fixDashes(words))
     return N, sentences
 
-MAXTEST = 100
-def splitPromptsToTrainAndTest(dest, filteredprompts, training="training.txt", testing="testing.txt", grain=10):
+MAXTEST = 50
+def splitPromptsToTrainAndTest(dest, filteredprompts, training="training.txt", testing="testing.txt", grain=10, savetestset=True):
     training = os.path.join(dest, training)
     testing = os.path.join(dest, testing)
     try:
         os.remove(training)
     except:
         pass
-    try:
-        os.remove(testing)
-    except:
-        pass
-    testing = open(testing, "w")
+    if not savetestset or not os.path.exists(testing):
+        try:
+            os.remove(testing)
+        except:
+            pass
+        testing = open(testing, "w")
+    else:
+        print "USING EXISTING TESTSET"
+        testing = False
     training = open(training, "w")
     j = 0
     for i, prompt in enumerate(filteredprompts):
         prompt = " ".join([prompt[0], prompt[1]]+HTKFriendly(prompt[2:-1])+[prompt[-1]])
         if j < MAXTEST and i % grain == 0:
-            testing.write("%s\n"%(prompt))
+            if testing:
+                testing.write("%s\n"%(prompt))
             j += 1
         else:
             training.write("%s\n"%(prompt))
-    testing.close()
+    if testing:
+        testing.close()
     training.close()
 
 promptPattern = re.compile('.*(?P<P>test\S*) .*')
@@ -687,9 +696,9 @@ sil
         for phone in phones:
             write("%s\n"%(phone))
             
-def makeBaselineDict(dest, prompts):
+def makeBaselineDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada", useMada=3, useBW=False, sep="\n", N=sys.maxint, pattern=False):
     phondict = {}
-    for prompt in open(os.path.join(dest, prompts)).read().split("\n"):
+    for prompt in readRawMada(os.path.join(src, prompts), N=N, pattern=pattern)[1]:
         for word in prompt.split(" ")[2:-1]:
             transcription = " ".join(word)
             if not word in phondict:
@@ -871,7 +880,7 @@ def fixPhonTrans(text0, useMada):
     # text0 = text0.replace("p", "h")
     return text0
     
-def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada", useMada=3, useBW=False, sep="\n", N=sys.maxint, pattern=False):
+def makeMadaDict(src="SRC", dest="EXPT", prompts="originalprompts.segments.mada", useMada=3, useBW=False, sep="\n", N=sys.maxint, pattern=False):
     phondict0 = {}
     phondict1 = {}
     allphones = set()
@@ -884,11 +893,11 @@ def makeMadaDict(src="TEMP", dest="EXPT", prompts="originalprompts.segments.mada
         phones0 += '"%s.lab"\nsil'%(sentence[0].form)
         phones1 += '"%s.lab"\nsil'%(sentence[0].form)
         for w in sentence[2:-1]:
+            form = HTKFriendly(str(buck.uni2buck(w.form)))
             phones = " ".join(str(HTKFriendly(w.diacritics)))
             phones = fixPhonTrans(phones, useMada)
             for p in phones.split(" "):
                 allphones.add(p)
-            form = HTKFriendly(str(buck.uni2buck(w.form)))
             incTableN([form, phones], phondict0)
             phones0 += "%s%s"%(sep, phones.replace(" ", sep))
             phones1 += "%s%s%ssp"%(sep, phones.replace(" ", sep), sep)
@@ -950,7 +959,7 @@ def getSimplePromptsFromMADAMIRA(prompts0):
 def fixflags(d):
     return ", ".join("%s:%s"%(k, d[k]) for k in sorted(d.keys()))
 
-def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBigramGrammar, useMada="madamira3", useProlog=False, useFixedDict='multi', wav="wav", N=sys.maxsize, useconfig=useconfig25, multiStage="yes", pattern=False):
+def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBigramGrammar, useMada="madamira3", useProlog=False, useFixedDict='multi', wav="wav", N=sys.maxsize, useconfig=useconfig25, multiStage="yes", pattern=False, savetestset=True):
     useconfig()
     if isinstance(pattern, str):
         pattern = re.compile(pattern)
@@ -975,6 +984,9 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     """
     madamiraPattern = re.compile("madamira(?P<useMada>\d*)")
     samaPattern = re.compile("sama(?P<useMada>\d*)")
+    """
+    Make sure that you've read the amount of training data you want + MAXTEST prompts for testing
+    """
     if madamiraPattern.match(useMada):
         mada2prompts(src=src, dest=src, promptsfile=prompts, N=N, pattern=pattern)
     dummyN, originalprompts = readRawMada(os.path.join(src, prompts), N=N, pattern=pattern)
@@ -989,6 +1001,7 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     srcwavfiles = set(os.listdir(srcwavpath))
     makedirs(destwavpath)
     print "Checking prompts have wav files in %s and copying them into %s"%(srcwavpath, destwavpath)
+    recordinglength = 0.0
     for prompt in originalprompts:
         try:
             wavfile = "%s.wav"%(promptname.match(prompt[0].form).group("promptname"))
@@ -999,6 +1012,8 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
             filteredprompts.append(prompt)
             if not os.path.exists(os.path.join(destwavpath, wavfile)):
                 os.link(os.path.join(srcwavpath, wavfile), os.path.join(destwavpath, wavfile))
+            recordinglength += wavlength(os.path.join(os.getcwd(), destwavpath, wavfile))
+    print "RECORDING LENGTH %.2f"%(recordinglength/60.0)
     mfcdir="mfc-%s"%(useconfig.__name__)
     toMFC(dest, mfcdir=mfcdir)
     if not filteredprompts == originalprompts:
@@ -1016,7 +1031,7 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
         write("\n".join([" ".join(p) for p in fp1]))
     training = "training.txt"
     testing = "testing.txt"
-    splitPromptsToTrainAndTest(dest, filteredprompts, training=training, testing=testing, grain=10)
+    splitPromptsToTrainAndTest(dest, filteredprompts, training=training, testing=testing, grain=10, savetestset=savetestset)
     wordsmlf(dest, training, testing)
     """
     I am currently generating the prompts by making a dictionary and then using that
@@ -1032,7 +1047,7 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
     """
     print "USEMADA %s"%(useMada)
     if useMada.startswith("base"):
-        phondict0, pyadict = makeBaselineDict(dest, "%s.bwf"%(allprompts))
+        phondict0, pyadict = makeBaselineDict(dest, "%s.bwf"%(allprompts), N=N)
         baseprompts2phones(dest, "%s.bwf"%(allprompts), training, phondict0, n=0)
         baseprompts2phones(dest, "%s.bwf"%(allprompts), training, phondict0, n=1)
         phondict1 = phondict0
@@ -1069,26 +1084,29 @@ def dataprep(src, dest=False, prompts="originalprompts.txt", makeGrammar=makeBig
         phondict1 = phondict0
         phonprompts2phones(dest, "%s.bwf"%(allprompts), training, phonprompts, n=0)
         phonprompts2phones(dest, "%s.bwf"%(allprompts), training, phonprompts, n=1)
-    htkformat_dictionary(phondict0, dest, N=0, useMada=useMada, useFixedDict=useFixedDict)
-    htkformat_dictionary(phondict1, dest, N=1, useMada=useMada, useFixedDict=useFixedDict)
+    htkformat_dictionary(phondict0, dest, D=0, useMada=useMada, N=N, useFixedDict=useFixedDict)
+    htkformat_dictionary(phondict1, dest, D=1, useMada=useMada, N=N, useFixedDict=useFixedDict)
     if multiStage == "yes":
         shutil.copy(os.path.join(dest, "phones1.mlf"), os.path.join(dest, "phones2.mlf"))
-        shutil.copy(os.path.join(dest, "dict-%s-1.txt"%(useMada)), os.path.join(dest, "dict-%s-2.txt"%(useMada)))
+        shutil.copy(os.path.join(dest, "dict-%s-%s-1.txt"%(useMada)), os.path.join(dest, "dict-%s-2.txt"%(useMada), N))
         shutil.copy(os.path.join(dest, "monophones1"), os.path.join(dest, "monophones2"))
         removeShortVowels(os.path.join(dest, "phones0.mlf"))
         removeShortVowels(os.path.join(dest, "phones1.mlf"))
-        removeShortVowels(os.path.join(dest, "dict-%s-0.txt"%(useMada)))
-        removeShortVowels(os.path.join(dest, "dict-%s-1.txt"%(useMada)))
+        removeShortVowels(os.path.join(dest, "dict-%s-%s-0.txt"%(useMada, N)))
+        removeShortVowels(os.path.join(dest, "dict-%s-%s-1.txt"%(useMada, N)))
     prompts2code(dest, training, "%s.scp"%(training[:-4]), mfcdir=mfcdir)
     prompts2code(dest, testing, "%s.scp"%(testing[:-4]), mfcdir=mfcdir)
-    makeGrammar(dest, prompts="testing.txt", dfile="dict-%s-0.txt"%(useMada))
+    if not savetestset or not os.path.exists("wdnet"):
+        makeGrammar(dest, prompts="testing.txt", dfile="dict-%s-%s-0.txt"%(useMada, N))
+    else:
+        print "USING EXISTING GRAMMAR"
     return phondict0, pyadict
 
 ####################################################################################
 # General initialisation stuff: copy wav files & prompts, make .scp and .mlf files #
 ####################################################################################
 
-def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=False, useMada=False, useForcedAlignment='Y', localtests=50, useTiedList=True, rounds=3, findmismatches=False, phondict=False, quit=100, multiStage="no", useFixedDict="multi", mfcdir="mfc"):
+def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=False, useMada=False, useForcedAlignment='Y', localtests=50, useTiedList=True, rounds=3, findmismatches=False, phondict=False, quit=100, multiStage="no", useFixedDict="multi", mfcdir="mfc", N=sys.maxint):
     T = datetime.now()
     print "TRAINING STARTED %s: useForcedAlignment=%s, useProlog=%s, useMada=%s, multiStage=%s"%(T, useForcedAlignment, useProlog, useMada, multiStage)
     results = []
@@ -1104,7 +1122,7 @@ def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=Fa
     createHMM0Defs(d)
     print "TRAINING WITH MONOPHONES0 (i.e. without short pauses): %s rounds"%(rounds)
     for i in range(1, 1+rounds):
-        lastdict = "dict-%s-0.txt"%(useMada)
+        lastdict = "dict-%s-%s-0.txt"%(useMada, N)
         if HERest(d, i, 0):
             test(d, hmm="hmm%s"%(i), hmmlist="monophones0", lexicon=lastdict, N=localtests)
             if i > quit:
@@ -1114,7 +1132,7 @@ def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=Fa
     i += 2
     print "TRAINING WITH MONOPHONES1 (i.e. with short pauses this time): %s rounds"%(rounds)
     for i in range(i, i+rounds+(0 if multiStage=="yes" else rounds+2)): # range(6, 8)
-        lastdict = "dict-%s-1.txt"%(useMada)
+        lastdict = "dict-%s-%s-1.txt"%(useMada, N)
         if HERest(d, i, 1):
             test(d, hmm="hmm%s"%(i), hmmlist="monophones1", lexicon=lastdict, N=localtests)
             if findmismatches:
@@ -1125,7 +1143,7 @@ def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=Fa
     if multiStage == "yes":
         i += 1
         print "TRAINING WITH MONOPHONES2 (with short vowels reintroduced): %s rounds"%(rounds)
-        lastdict = "dict-%s-2.txt"%(useMada)
+        lastdict = "dict-%s-%s-2.txt"%(useMada, N)
         for i in range(i, i+rounds+2): # range(6, 8)
             if HERest(d, i, 2):
                 test(d, hmm="hmm%s"%(i), hmmlist="monophones2", lexicon=lastdict, N=localtests)
@@ -1142,7 +1160,7 @@ def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=Fa
         print "Skipping realignment -- phones1 was derived by using context sensitive rules, so is supposed to have the right version at each point already"
         shutil.copyfile("%s/phones1.mlf"%(d), "%s/aligned.mlf"%(d))
         shutil.copyfile("%s/training.scp"%(d), "%s/training1.scp"%(d))
-        checkDictOK(d, dict="dict-%s-0.txt"%(useMada))
+        checkDictOK(d, dict="dict-%s-%s-0.txt"%(useMada, N))
     i += 1
     print "TRAINING AFTER FORCED ALIGNMENT"
     for i in range(i, i+rounds):
@@ -1201,7 +1219,7 @@ def train(d='EXPT', training='training.scp', testing='testing.scp', useProlog=Fa
         hmm = 'hmm%s'%(i)
         hmmlist = 'triphones1'
     T1 = datetime.now()
-    flags = {"useProlog":useProlog, "useMada":useMada, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment}
+    flags = {"useProlog":useProlog, "useMada":useMada, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment, "N":N}
     print "TRAINING WITH %s TOOK %s SECONDS\n"%(fixflags(flags), int((T1-T).total_seconds()))
     if quit == 99:
         return {}
@@ -1545,7 +1563,7 @@ def enlist(s):
     else:
         return [s]
     
-def experiment(src="TEMP", dest="TEST", prompts="originalprompts.segments.mada", dicts=["multi", "fixed"], prolog=0, stages="no", mada="madamira%s"%(FIXSUKUNS), forcedAlignment=["Y", "N"], configs=useconfig39, N=sys.maxsize, localtests=10, quit=100, pattern=False):
+def experiment(src="SRC", dest="TEST", prompts="originalprompts.segments.mada", dicts=["multi", "fixed"], prolog=0, stages="no", mada="madamira%s"%(0), forcedAlignment=["Y", "N"], configs=useconfig39, N=sys.maxsize, localtests=10, quit=100, pattern=False, savetestset=True):
     makedirs(dest)
     makeGrammar = makeGrammar1
     makeGrammar = makeBigramGrammar
@@ -1557,6 +1575,10 @@ def experiment(src="TEMP", dest="TEST", prompts="originalprompts.segments.mada",
     configs = enlist(configs)
     N = enlist(N)
     experiments = []
+    try:
+        os.remove(os.path.join(dest, "wdnet"))
+    except:
+        print "no wdnet, so no need to remove it"
     for useconfig in configs:
         clean(dest)
         for useFixedDict in dicts: 
@@ -1572,19 +1594,19 @@ def experiment(src="TEMP", dest="TEST", prompts="originalprompts.segments.mada",
                         if useProlog > 0 and (useMada.startswith("sama") or useMada.startswith("base")):
                             print "Skipping useMada=%s, useProlog=%s"%(useMada, useProlog)
                             continue
-                        clean(dest, ["genfiles", "training"])
+                        clean(dest, ["training"])
                         for multiStage in stages:
                             if multiStage == "yes" and not useMada.startswith("madamira"):
                                 print "Skipping useMada=%s, multiStage=%s"%(useMada, multiStage)
                                 continue
                             for n in N:
-                                print "#### EXPERIMENT %s ########"%(fixflags({"useProlog":useProlog, "useMada":useMada, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment}))
-                                experiments.append(EXPERIMENT(src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit, pattern=pattern))
+                                print "#### EXPERIMENT %s ########"%(fixflags({"useProlog":useProlog, "useMada":useMada, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment, "N":n}))
+                                experiments.append(EXPERIMENT(src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit, pattern=pattern, savetestset=savetestset))
     return experiments
 
 class EXPERIMENT:
 
-    def __init__(self, src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, N=sys.maxsize, quit=100, multiStage="no", pattern=False):
+    def __init__(self, src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, N=sys.maxsize, quit=100, multiStage="no", pattern=False, savetestset=True):
         self.src = src
         self.dest = dest
         self.prompts = prompts
@@ -1600,11 +1622,11 @@ class EXPERIMENT:
         """
         Absolutely bog-standard dataprep
         """
-        self.phondict, self.pyadict = dataprep(src, dest, prompts=prompts, useProlog=useProlog, useMada=useMada, useFixedDict=useFixedDict, useconfig=useconfig, makeGrammar=makeGrammar, N=N, multiStage=self.multiStage, pattern=pattern)
+        self.phondict, self.pyadict = dataprep(src, dest, prompts=prompts, useProlog=useProlog, useMada=useMada, useFixedDict=useFixedDict, useconfig=useconfig, makeGrammar=makeGrammar, N=N, multiStage=self.multiStage, pattern=pattern, savetestset=savetestset)
         """
         Then do training
         """
-        self.alignments = train(dest, useProlog=useProlog, useMada=useMada, useForcedAlignment=useForcedAlignment, localtests=localtests, phondict=self.phondict, quit=quit, multiStage=self.multiStage, mfcdir="mfc-%s"%(useconfig.__name__)) 
+        self.alignments = train(dest, useProlog=useProlog, useMada=useMada, useForcedAlignment=useForcedAlignment, localtests=localtests, phondict=self.phondict, quit=quit, multiStage=self.multiStage, mfcdir="mfc-%s"%(useconfig.__name__), N=N) 
 
 ###################################################################
 # bits and pieces for debugging and generally poking around       #
