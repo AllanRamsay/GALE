@@ -18,11 +18,11 @@ TESTPROMPT = "SYRIANTV_NEWS25_ARB_20070403_162800.qrtr.tdf"
 
 P = re.compile("^(?P<prompt>\S*)	(?P<channel>\d+)	(?P<start>[\d.]+)	(?P<end>[\d.]+)	(?P<speaker>.*)	(?P<gender>\S*)	(?P<dialect>\S*)	(?P<transcript>.*)	(?P<section>\d+)	(?P<turn>\d+)	(?P<segment>-?\d+)	(?P<secType>\S*)(\s*(?P<uType>\S+))?$")
 
-tag = re.compile("<\S*>")
+tag = re.compile("<.*?>")
 respace = re.compile("\s+")
 brackets = re.compile("\(|\)|=|\+")
 
-def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxint, segments=False, prompts="", promptsfile="originalprompts.segments", useBW=False, rawPrompts=True, copywavfiles=False):
+def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxint, segments=False, prompts="", promptsfile="originalprompts.segments", useBW=False, rawPrompts=True, copywavfiles=False, separatedashes=True):
     print "SRC %s, N %s"%(src, N)
     if segments == False:
         segments = []
@@ -52,6 +52,8 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
                 transcript = m.group("transcript").decode("UTF-8")
                 if useBW:
                     transcript = buck.uni2buck(transcript, buck._uni2buck)
+                if separatedashes:
+                    transcript = transcript.replace("-", " - ")
                 transcript = respace.sub(" ", brackets.sub("", tag.sub("", transcript)))
                 s = [m.group("prompt"), float(m.group("start")), float(m.group("end")), transcript]
                 test ="test-%s-%s-%s-%s"%(prompt, m.group("gender"), m.group("dialect"), i)
@@ -75,7 +77,7 @@ def saveprompts(prompts, out):
     with safeout(out, encoding="UTF-8") as write:
         write(prompts)
 
-def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", promptsfile="originalprompts.segments", rawPrompts=False, useBW=False, out=False, runMadamira=True, N=sys.maxint, copywavfiles=False):
+def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="SRC", promptsfile="originalprompts.segments", rawPrompts=False, useBW=False, out=False, runMadamira=True, N=sys.maxint, copywavfiles=False):
     N, prompts = segment(src, rawPrompts=rawPrompts, useBW=useBW, N=N, copywavfiles=copywavfiles)
     if not out:
         out = promptsfile
