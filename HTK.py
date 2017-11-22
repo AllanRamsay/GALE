@@ -49,7 +49,7 @@ def clean(d, targets=["data", "training", "genfiles"]):
         targets = [targets]
     files = {"data": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.*.scp', 'words.mlf']),
              "wav": map(re.compile, ["wav", 'mfc*']),
-             "genfiles": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf', 'wdnet']),
+             "genfiles": map(re.compile, ['allprompts.txt', 'monophones.*', 'phones..mlf', 'testing.scp', 'training.txt', 'training.pck', 'config.txt', 'mfc.scp', 'phonprompts.txt', 'testing.txt', 'mfcconfig.txt', 'prompts.pl', 'training.scp', 'words.mlf', 'wdnet']),
             "training": map(re.compile, ['aligned.mlf', 'hmm.*', '.*acc', 'tiedlist', 'train.scp', 'wintri.mlf', 'dict-tri', 'mktri.hed', 'proto.txt', 'mktri.led', 'flog', 'sil.hed', 'tree.hed', 'fulllist', 'stats', 'trees', 'gram.txt', 'triphones1'])}
     for target in targets:
         for t in files[target]:
@@ -228,7 +228,7 @@ def htkformat_dictionary(dict, exptdir, dictfile, D=0, useFixedDict="multi"):
                 write('%s\t%s\n'%(key, 'sil'))
     if D == 1:
         print "%s words out of %s had multiple entries"%(m, len(dict))
-    
+    return m
 
 ##################################################################
 #                        Prolog stuff                            #
@@ -1007,22 +1007,29 @@ def dataprep(src, dest, expt=False, prompts="originalprompts.txt", makeGrammar=m
     testprompts = {}
     i = 0
     makedirs(destwavpath)
-    for f in srcwavfiles:
-        if f in madafiles and testpattern.match(f):
-            testprompts[f] = madafiles[f]
-            try:
-                os.link(os.path.join(srcwavpath, f), os.path.join(destwavpath, f))
-            except:
-                pass
-            i += 1
-            if i == MAXTEST:
-                break
+    try:
+        testprompts = load(os.path.join(dest, "testing.pck"))
+        print "USING EXISTING %s"%(os.path.join(dest, "testing.pck"))
+    except:
+        print "CREATING NEW TESTSET %s"%(os.path.join(dest, "testing.txt"))
+        for f in srcwavfiles:
+            if f in madafiles and testpattern.match(f): 
+                testprompts[f] = madafiles[f]
+                try:
+                    os.link(os.path.join(srcwavpath, f), os.path.join(destwavpath, f))
+                except:
+                    pass
+                i += 1
+                if i == MAXTEST:
+                    break
+        dump(testprompts, os.path.join(dest, "testing.pck"))
     """
     Now get a consistent random set of training files of the required size
     """
     trainingpattern = re.compile(trainingpattern)
     trainingprompts = {}
-    available = set(madafiles.keys()).difference(set(trainingprompts.keys()))
+    available = set(madafiles.keys()).difference(set(testprompts.keys()))
+    i = 0
     for f in srcwavfiles:
         if f in available and trainingpattern.match(f):
             trainingprompts[f] = madafiles[f]
@@ -1037,7 +1044,7 @@ def dataprep(src, dest, expt=False, prompts="originalprompts.txt", makeGrammar=m
     trainingtime = checkLength(trainingprompts, destwavpath)/60.0
     print "length of recordings for training %.2f"%(trainingtime)
     mfcdir="mfc-%s"%(useconfig.__name__)
-    toMFC(dest, mfcdir=mfcdir)
+    toMFC(dest, wav=wav, mfcdir=mfcdir)
     allprompts = "allprompts"
     training = "training.txt"
     testing = "testing.txt"
@@ -1077,10 +1084,10 @@ def dataprep(src, dest, expt=False, prompts="originalprompts.txt", makeGrammar=m
         phonprompts2phones(dest, "%s.bwf"%(allprompts), training, phonprompts, n=0)
         phonprompts2phones(dest, "%s.bwf"%(allprompts), training, phonprompts, n=1)
     htkformat_dictionary(phondict0, dest, "dict-%s-%s-%s.txt"%(useMada, N, 0), useFixedDict=useFixedDict)
-    htkformat_dictionary(phondict1, dest, "dict-%s-%s-%s.txt"%(useMada, N, 1), D=1, useFixedDict=useFixedDict)
+    multipleEntries = htkformat_dictionary(phondict1, dest, "dict-%s-%s-%s.txt"%(useMada, N, 1), D=1, useFixedDict=useFixedDict)
     if multiStage == "yes":
         raise Exception("Not fixed for new format")
-        shutil.copy(os.path.join(dest, "phones1.mlf"), os.path.join(dest, "phones2.mlf"))
+        shutil.copy(os.path.join(dest, "phones1.mlf"), os.path.ojin(dest, "phones2.mlf"))
         shutil.copy(os.path.join(dest, "dict-%s-%s-1.txt"%(useMada)), os.path.join(dest, "dict-%s-2.txt"%(useMada), N))
         shutil.copy(os.path.join(dest, "monophones1"), os.path.join(dest, "monophones2"))
         removeShortVowels(os.path.join(dest, "phones0.mlf"))
@@ -1092,16 +1099,17 @@ def dataprep(src, dest, expt=False, prompts="originalprompts.txt", makeGrammar=m
     prompts2code(dest, training, "%s.scp"%(training[:-4]), mfcdir=mfcdir)
     splitTraining(os.path.join(dest, "%s.scp"%(training[:-4])), S=10000)
     prompts2code(dest, testing, "%s.scp"%(testing[:-4]), mfcdir=mfcdir)
-    makeGrammar(dest, testprompts.values(), dfile="dict-%s-%s-0.txt"%(useMada, N))
     tdict0, tpyadict = makeMadaDict(src, dest, testprompts.values(), useMada=IuseMada, N=len(trainingprompts), savePhones=False)
     tdict1 = tdict0
     htkformat_dictionary(tdict0, dest, "testdict-0.txt", useFixedDict=useFixedDict)
     htkformat_dictionary(tdict1, dest, "testdict-1.txt", D=1, useFixedDict=useFixedDict)
+    makeGrammar(dest, testprompts.values(), dfile="testdict-0.txt")
     if expt:
         expt.testing = testprompts
         expt.training = trainingprompts
         expt.phondict = phondict0
         expt.trainingtime = trainingtime
+    return multipleEntries
 
 ####################################################################################
 # General initialisation stuff: copy wav files & prompts, make .scp and .mlf files #
@@ -1158,12 +1166,12 @@ def train(d='EXPT', expt=False, training='training.scp', testing='testing.scp', 
     testpattern = re.compile('"*/(?P<test>.*).lab"')
     if useForcedAlignment == 'Y':
         print "DO FORCED ALIGNMENT @ %s"%(i)
-        aligned(d, i, lexicon=lastdict, mfcdir=mfcdir)
+        aligned(d, "trainingFA.scp", i, lexicon=lastdict, mfcdir=mfcdir)
     else:
         print "Skipping realignment -- phones1 was derived by using context sensitive rules, so is supposed to have the right version at each point already"
         shutil.copyfile("%s/phones1.mlf"%(d), "%s/aligned.mlf"%(d))
         shutil.copyfile("%s/training.scp"%(d), "%s/trainingFA.scp"%(d))
-        checkDictOK(d, dict=testdict)
+    checkDictOK(d, dict=testdict)
     splitTraining(os.path.join(d, "trainingFA.scp"), S=10000)
     i += 1
     print "TRAINING AFTER FORCED ALIGNMENT"
@@ -1361,15 +1369,13 @@ def toMFC(dest, wav="wav", mfcdir="mfc"):
     wavfiles = os.listdir(wavdir)
     makedirs(mfcdir)
     mfcfiles = os.listdir(mfcdir)
-    print "toMFC(%s, %s): already contains %s files"%(wavdir, mfcdir, len(mfcfiles))
-    if len(wavfiles) == len(mfcfiles):
-        print "%s already populated"%(mfcdir)
-    else:
-        with safeout(os.path.join(dest, "mfc.scp")) as write:
-            for wavfile in wavfiles:
-                if not "%s/%s.mfc"%(mfcdir, wavfile[:-4]) in mfcfiles:
-                    write("%s/%s %s/%s.mfc\n"%(wavdir, wavfile, mfcdir, wavfile[:-4]))
-        # print "%s/%s contains %.2f minutes of recorded material"%(dest, wav, wavlength(os.path.join(dest, wav))/60.0)
+    oneNeeded = False
+    with safeout(os.path.join(dest, "mfc.scp")) as write:
+        for wavfile in wavfiles:
+            if not "%s/%s.mfc"%(mfcdir, wavfile[:-4]) in mfcfiles:
+                write("%s/%s %s/%s.mfc\n"%(wavdir, wavfile, mfcdir, wavfile[:-4]))
+                oneNeeded = True
+    if oneNeeded:
         codetrain(dest, "mfc.scp")
                       
 def codetrain(d, scp, useconfig=useconfig25):
@@ -1453,11 +1459,11 @@ TI silst {sil.state[3],sp.state[2]}
     execute('HHEd -A -D -T %s -H %s/hmm%s/macros -H %s/hmm%s/hmmdefs -M %s/hmm%s %s/sil.hed %s/monophones1'%(DEBUG, d, i-1, d, i-1, d, i, d, d))
     print "OK, hmm%s should now be created and populated"%(i)
 
-def aligned(dest, i, lexicon="dict1.txt", mfcdir="mfc"):
+def aligned(dest, newtraining, i, lexicon="dict1.txt", mfcdir="mfc"):
     hmm = os.path.join(dest, "hmm%s"%(i))
     print "aligned(%s)"%(hmm)
     testpattern = re.compile('"*/(?P<test>.*).lab"')
-    standard = "HVite -A -D -T %s -p 2.0 -s 10.0 -l * -o SWT -a -b !EXIT -m -C %s/config.txt -H %s/macros -H %s/hmmdefs -i %s/aligned.mlf -t 250.0 150.0 1000.0 -y lab -I %s/words.mlf -S %s/trainingFA.scp %s/%s %s/monophones1"%(DEBUG, dest, hmm, hmm, dest, dest, dest, dest, lexicon, dest)
+    standard = "HVite -A -D -T %s -p 2.0 -s 10.0 -l * -o SWT -a -b !EXIT -m -C %s/config.txt -H %s/macros -H %s/hmmdefs -i %s/aligned.mlf -t 250.0 150.0 1000.0 -y lab -I %s/words.mlf -S %s/training.scp %s/%s %s/monophones1"%(DEBUG, dest, hmm, hmm, dest, dest, dest, dest, lexicon, dest)
     execute(standard)
     properlyAligned = set('"%s/%s/%s.mfc"'%(dest, mfcdir, i.group("file")) for i in re.compile("(?P<file>test\S+)\.").finditer(open("%s/aligned.mlf"%(dest)).read()))
     """
@@ -1475,7 +1481,8 @@ def aligned(dest, i, lexicon="dict1.txt", mfcdir="mfc"):
     """
     training = open(os.path.join(dest, "training.scp")).read().strip().split("\n")
     notaligned = []
-    with safeout(os.path.join(dest, "training1.scp")) as write:
+    print "About to write trainingFA.scp: %s"%(os.path.join(dest, newtraining))
+    with safeout(os.path.join(dest, newtraining)) as write:
         for prompt in training:
             if prompt in properlyAligned:
                 write("%s\n"%(prompt))
@@ -1522,11 +1529,15 @@ def monophones2TB(t, monophones):
 
 def makeTiedList(d, i, dict="dict1.txt"):
     execute('HDMan -A -D -T %s -b sp -n %s/fulllist -g %s/global.ded -l %s/flog %s/dict-tri %s/%s'%(DEBUG, d, d, d, d, d, dict))
-    allphones = {}
+    allphones = set()
+    """
     for phone in open('%s/fulllist'%(d)).readlines()+open('%s/triphones1'%(d)).readlines():
         allphones[phone] = True
+    """
+    for phone in open('%s/fulllist'%(d)).readlines()+open('%s/triphones1'%(d)).readlines():
+        allphones.add(phone)
     with safeout('%s/fulllist'%(d)) as write:
-        for phone in allphones:
+        for phone in sorted(allphones):
             write(phone)
     with safeout('%s/tree.hed'%(d)) as write:
         write("""
@@ -1587,8 +1598,8 @@ def experiment(src="SRC", dest="TEST", prompts="", dicts=["multi", "fixed"], pro
     configs = enlist(configs)
     N = enlist(N)
     experiments = []
+    clean(dest)
     for useconfig in configs:
-        clean(dest)
         for useFixedDict in dicts: 
             for useForcedAlignment in forcedAlignment:
                 if useFixedDict == "fixed" and useForcedAlignment == "Y":
@@ -1606,6 +1617,11 @@ def experiment(src="SRC", dest="TEST", prompts="", dicts=["multi", "fixed"], pro
                             if multiStage == "yes" and not useMada.startswith("madamira"):
                                 print "Skipping useMada=%s, multiStage=%s"%(useMada, multiStage)
                                 continue
+                            try:
+                                os.remove(os.path.join(dest, "wdnet"))
+                                print "REMOVED %s AT START OF CYCLE"%(os.path.join(dest, "wdnet"))
+                            except:
+                                pass
                             for n in N:
                                 print "#### EXPERIMENT %s ########"%(fixflags({"useProlog":useProlog, "useMada":useMada, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment, "N":n, "config":useconfig.__name__}))
                                 experiments.append(EXPERIMENT(src, dest, prompts, useMada, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit, testpattern=testpattern, trainingpattern=trainingpattern, savetestset=savetestset))
@@ -1629,11 +1645,15 @@ class EXPERIMENT:
         """
         Absolutely bog-standard dataprep
         """
-        dataprep(src, dest, expt=self, prompts=prompts, useProlog=useProlog, useMada=useMada, useFixedDict=useFixedDict, useconfig=useconfig, makeGrammar=makeGrammar, N=N, multiStage=self.multiStage, testpattern=testpattern, trainingpattern=trainingpattern, savetestset=savetestset)
+        m = dataprep(src, dest, expt=self, prompts=prompts, useProlog=useProlog, useMada=useMada, useFixedDict=useFixedDict, useconfig=useconfig, makeGrammar=makeGrammar, N=N, multiStage=self.multiStage, testpattern=testpattern, trainingpattern=trainingpattern, savetestset=savetestset)
+        if m == 0 and useForcedAlignment == "Y":
+            print "No point in doing forced alignment if there aren't multiple entries in the dictionary"
+            return False
         """
         Then do training
         """
         train(dest, expt=self, useProlog=useProlog, useMada=useMada, useForcedAlignment=useForcedAlignment, localtests=localtests, phondict=self.phondict, quit=quit, multiStage=self.multiStage, mfcdir="mfc-%s"%(useconfig.__name__), N=N, useconfig=useconfig, useFixedDict=useFixedDict) 
+        print "SCORE AS CSV %s\t%.2f\t%.3f\n"%(len(self.training), self.trainingtime, self.score()[0])
 
     def score(self):
         i = 0
@@ -1657,11 +1677,28 @@ class EXPERIMENT:
         return float(c)/float(n), c, i, d, x, n
 
 def expts2csv(expts, out=sys.stdout):
+    rows = {0:["", ""]}
+    for e in expts:
+        label = "%s:%s:%s:%s"%(e.useMada.replace("adamira", ""), e.useFixedDict[0], e.useconfig.__name__.replace("useconfig", "c"), e.useForcedAlignment) 
+        l = str(len(e.training))
+        t = "%.2f"%(e.trainingtime)
+        s = "%.3f"%(e.score()[0])
+        if l == "50":
+            rows[0].append(label)
+        try:
+            rows[int(l)].append(s)
+        except:
+            rows[int(l)] = [l, t, s]
     with safeout(out) as write:
-        write("training #\ttraining time\taccuracy\n")
-        for e in expts:
-            write("%s\t%.2f\t%.2f\n"%(len(e.training), e.trainingtime, e.score()[0]))
-        
+        for row in sorted(rows.keys()):
+            write("\t".join(rows[row])+"\n")
+
+def textresults2csv(s, out=sys.stdout):
+    if not "\n" in s:
+        s = open(s).read()
+    with safeout(out) as write:
+        for r in re.compile("SCORE AS CSV (?P<L>\S+)	(?P<T>\S+)	(?P<A>\S+)").finditer(s):
+            write("%s\t%.2f\t%.3f\n"%(r.group("L"), float(r.group("T")), float(r.group("A"))))
 
 ###################################################################
 # bits and pieces for debugging and generally poking around       #

@@ -172,7 +172,7 @@ def fixDashes(sentence0):
     for i, w in enumerate(sentence0):
         if w[FORM] == "-":
             try:
-                w0, w1 = sentence[i-1], sentence[i+1]
+                w0, w1 = sentence0[i-1], sentence0[i+1]
                 n += 1
                 """
                 We're interested in the word before the dash. If that was "Al" 
@@ -181,7 +181,7 @@ def fixDashes(sentence0):
                 """
                 if w0[DIACRITICS] == "Al":
                     w0[DIACRITICS] = "Qal"
-                elif sentence[i+1][FORM].startswith(sentence[i-1][FORM]):
+                elif w1[FORM].startswith(w0[FORM]):
                     """ 
                     bgt- bgtdq
                     Mada said that bgt was bagat but that bgtdq was bugutidaq
@@ -190,7 +190,8 @@ def fixDashes(sentence0):
                     """
                     w0[DIACRITICS] = borrowDiacritics(w0, w1)
                 elif len(sentence[i-1][FORM]) == 1:
-                    w0[DIACRITICS] = sentence[i-1][FORM]+"a"
+                    w0[DIACRITICS] = w0[FORM]+"a"
+                w0[FORM] = w0[FORM]+"-"
             except Exception as e:
                 pass
             """
