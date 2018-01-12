@@ -20,6 +20,8 @@ TESTPROMPT = "SYRIANTV_NEWS25_ARB_20070403_162800.qrtr.tdf"
 
 P = re.compile("^(?P<prompt>\S*)	(?P<channel>\d+)	(?P<start>[\d.]+)	(?P<end>[\d.]+)	(?P<speaker>.*)	(?P<gender>\S*)	(?P<dialect>\S*)	(?P<transcript>.*)	(?P<section>\d+)	(?P<turn>\d+)	(?P<segment>-?\d+)	(?P<secType>\S*)(\s*(?P<uType>\S+))?$")
 
+rubbish = re.compile("Dialecte non trans")
+
 tag = re.compile("<.*?>")
 respace = re.compile("\s+")
 brackets = re.compile("\(|\)|=|\+")
@@ -28,15 +30,16 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
     print "SRC %s, N %s"%(src, N)
     if segments == False:
         segments = []
-        try:
-            os.makedirs(os.path.join(dest,"wav"))
-        except:
-            print "%s already exists"%(os.path.join(dest,"wav"))
+        if copywavfiles:
+            try:
+                os.makedirs(os.path.join(copywavfiles,"wav"))
+            except:
+                print "%s already exists"%(os.path.join(copywavfiles,"wav"))
     segments = []
     if os.path.isdir(src):
         for f in os.listdir(src):
             if N > 0:
-                N, prompts = segment(src=os.path.join(src, f), dest=dest, wav=WAV, N=N, segments=segments, prompts=prompts)
+                N, prompts = segment(src=os.path.join(src, f), dest=dest, wav=wav, N=N, segments=segments, prompts=prompts)
     else:
         prompt = src.split("/")[-1]
         if not prompt.endswith(".qrtr.tdf"):
@@ -44,10 +47,11 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
         print prompt
         prompt = prompt[:-len(".qrtr.tdf")]
         if copywavfiles:
-            sound = sounds.readsound(os.path.join(wav, "%s.wav"%(prompt)))
+            sound = sounds.readsound(os.path.join(copywavfiles, wav, "%s.wav"%(prompt)))
         for i, line in enumerate(open(src)):
+            line = line.strip()
             m = P.match(line.strip())
-            if m:
+            if m and not rubbish.search(line):
                 if N <= 0:
                     break
                 N -= 1
@@ -58,20 +62,24 @@ def segment(src=os.path.join(TDF, TESTPROMPT), dest="TEMP", wav=WAV, N=sys.maxin
                     transcript = transcript.replace("-", " - ")
                 transcript = respace.sub(" ", brackets.sub("", tag.sub("", transcript)))
                 s = [m.group("prompt"), float(m.group("start")), float(m.group("end")), transcript]
-                test ="test-%s-%s-%s-%s"%(prompt, m.group("gender"), m.group("dialect"), i)
+                test ="test-%s-%s-%s-%s-%s"%(prompt, m.group("gender"), m.group("speaker"), m.group("dialect"), i)
                 if transcript.strip() == "":
                     continue
                 if rawPrompts:
                     prompts += "%s\n"%(transcript)
                 else:
-                    prompts += "*/%s !ENTER %s !EXIT\n"%(test, transcript)
-                segments.append(s)
-                start = s[1]
-                end = s[2]
-                w = os.path.join(dest, "wav", "%s.wav"%(test))
-                if copywavfiles and not os.path.isfile(w):
-                    sound.frames = False
-                    sound.save(w, start=int(start*sound.params[2]), end=int(end*sound.params[2]))
+                    try:
+                        prompts += "*/%s !ENTER %s !EXIT\n"%(str(test), transcript)
+                        if copywavfiles:
+                            segments.append(s)
+                            start = s[1]
+                            end = s[2]
+                            w = os.path.join(copywavfiles, "wav", "%s.wav"%(test))
+                            if not os.path.isfile(w):
+                                sound.frames = False
+                                sound.save(w, start=int(start*sound.params[2]), end=int(end*sound.params[2]))
+                    except:
+                        pass
     return N, prompts
 
 def saveprompts(prompts, out):
@@ -80,7 +88,7 @@ def saveprompts(prompts, out):
         write(prompts)
 
 def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="SRC", promptsfile="originalprompts.segments", rawPrompts=False, useBW=False, out=False, runMadamira=True, N=sys.maxint, copywavfiles=False):
-    N, prompts = segment(src, rawPrompts=rawPrompts, useBW=useBW, N=N, copywavfiles=copywavfiles)
+    N, prompts = segment(src, dest=dest, rawPrompts=rawPrompts, useBW=useBW, N=N, copywavfiles=copywavfiles)
     if not out:
         out = promptsfile
     out = os.path.join(dest, out)
@@ -90,7 +98,7 @@ def getPrompts(src=os.path.join(TDF, TESTPROMPT), dest="SRC", promptsfile="origi
         runmadamira(src=dest, dest=dest)
     return N
 
-def getPromptsLocally(src=TDF, dest="TEMP", rawPrompts=False, useBW=False, out=False, runMadamira=False, N=sys.maxint, copywavfiles=False):
+def getPromptsLocally(src=TDF, dest="SRC", rawPrompts=False, useBW=False, runMadamira=False, N=sys.maxint, copywavfiles=False):
     for path, dirs, files in os.walk(src):
         for f0 in files:
             f1 = os.path.join(dest, f0.split(".")[0])
@@ -219,19 +227,26 @@ class foreign(Exception):
 
     def __repr__(self):
         return "foreign('%s')"%(self.msg)
-    
-def mergeMadaFiles(top=".", out=True):
+
+import codecs
+def mergeMadaFiles(top=".", out=False):
     madafiles = {}
     for d, p, files in os.walk(top):
         for f in files:
             if f == "originalprompts.segments.mada":
-                for s in sPattern.finditer(open(os.path.join(d, f)).read()):
+                for s in sPattern.finditer(codecs.open(os.path.join(d, f), encoding="UTF-8").read()):
                     try:
                         words = []
                         for w in WPATTERN.finditer(s.group("words")):
-                            form = str(buck.uni2buck(w.group("word").decode("UTF-8")))
-                            d = DPATTERN.match(w.group(0))
-                            diac = str(buck.uni2buck(d.group("diac").decode("UTF-8")))
+                            try:
+                                form = str(buck.uni2buck(w.group("word")))
+                                d = DPATTERN.match(w.group(0))
+                                diac = str(buck.uni2buck(d.group("diac")))
+                            except Exception as e:
+                                print "Couldn't do conversion"
+                                print w.group(0)
+                                print buck.uni2buck(w.group("word"))
+                                raise e
                             try:
                                 gloss = str(d.group("gloss"))
                             except:
@@ -246,12 +261,37 @@ def mergeMadaFiles(top=".", out=True):
                     if len(words) > 3:
                         madafiles[str("%s.wav"%(s.group("test")))] = fixDashes(words)
     if out:
-        out = open(os.path.join(top, "madafiles.json"), "w")
+        out = open(os.path.join(top, out), "w")
         json.dump(madafiles, out)
         out.close()
     return madafiles
 
 def readMadaFiles(madafiles):
     return json.load(open(madafiles))
-                    
-        
+
+"""
+test-ABUDHABI_ABUDHNEWS_ARB_20070324_115800-male-speaker9-native-369.wav
+"""
+
+SPEAKERPATTERN = re.compile("test-(?P<file>.*)-(?P<gender>.*)-(?P<speaker>.*)-(?P<dialect>.*)-(?P<id>.*).wav")
+
+def getSpeaker(f):
+    try:
+        m = SPEAKERPATTERN.match(f)
+        return "%s-%s"%(m.group("file"), m.group("speaker"))
+    except Exception as e:
+        return False
+
+def getSpeakers(d="SRC", wav="wav", N=0):
+    speakers = {}
+    for f in os.listdir(os.path.join(d, wav)):
+        s = getSpeaker(f)
+        if s:
+            try:
+                speakers[s] += 1
+            except:
+                speakers[s] = 1
+    for s in speakers.keys():
+        if speakers[s] < N:
+            del speakers[s]
+    return speakers
