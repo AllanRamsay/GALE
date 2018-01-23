@@ -208,8 +208,11 @@ def fixDashes(sentence0):
             continue
         else:
             sentence1.append(w)
+    """
+    # Don't do HTKFriendly yet, because SAMA doesn't like it
     for w in sentence1[2:-1]:
         w[FORM] = HTKFriendly(w[FORM])
+    """
     return sentence1
 
 sPattern = re.compile(""";;; SENTENCE \S*(?P<test>test\S*)(?P<words>.*?)

@@ -11,8 +11,11 @@ errors (e.g. if any of the characters are already in a2bwtable.
 Allan, 26/07/2017
 """
 
-HTKDICT = {"$":"X", "*":"V", "|":"QA", "}":"D", "'":"Q", "`":"A", "o":"", "I":"Q", "O":"Q", "N":"un", "F":"an", "K":"in"}
-HTKDICT = {"$":"X", "*":"V", "|":"QA", "}":"Q", "'":"Q", "`":"A"}
+"""
+Added "U":"u" to allow for LDC dict
+"""
+
+HTKDICT = {"$":"X", "*":"V", "|":"QA", "}":"Q", "'":"Q", "`":"A", "U":"u"}
 
 def HTKFriendly(text0):
     """

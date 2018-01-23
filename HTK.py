@@ -2,9 +2,7 @@
 #!/usr/bin/python
 
 """
-experiments = experiment(dicts="multi", mada="madamira%s"%(FIXALL), forcedAlignment="Y", configs=useconfig25, localtests=0, N=[125, 500, 1000, 2000, 4000], testpattern="test-SYRI.*-male-native.*", trainingpattern="test-[^SYR].*-male-native.*")
-
-experiments = experiment(dicts="multi", mada="madamira%s"%(0), forcedAlignment="Y", prolog=12, configs=useconfig25, localtests=0, N=[125, 500, 1000, 2000, 4000], testpattern="test-SYRI.*-male-native.*", trainingpattern="test-[^SYR].*-male-native.*")
+expts = experiment(src= "SRC", dest="DEST", dicts="fixed", versions=["MADA:4"], forcedAlignment="N", prolog=4, configs=useconfig25, maintests=100, localtests=0, N=[500], testpattern=".*", trainingpattern=".*")
 """
 
 import subprocess
@@ -221,14 +219,20 @@ def htkformat_dictionary(dict, exptdir, dictfile, D=0, useFixedDict="multi"):
     else:
         sp = ""
     m = 0
+    written = set()
+    fixed = set(['!ENTER', '!EXIT', 'silence', 'sil', 'sp'])
+    print dict["sp"]
     with safeout(os.path.join(exptdir, dictfile)) as write:
         for key in sorted(dict.iterkeys()):
-            if key != '!ENTER' and key != '!EXIT' and key != 'silence': # to prevent putting their vales ('sil') as phones 
+            if not key in fixed: # to prevent putting their vales ('sil') as phones 
                 entries = sorted(dict[key])
                 if len(entries) > 1:
                     m += 1
                 for value in entries:
-                    write('%s\t%s%s\n'%(key, value, sp))
+                    s = '%s\t%s%s\n'%(key, value, sp)
+                    if not s in written:
+                        write(s)
+                        written.add(s)
                     if useFixedDict == "fixed" or D == 0:
                         break
             else:
@@ -237,7 +241,7 @@ def htkformat_dictionary(dict, exptdir, dictfile, D=0, useFixedDict="multi"):
         print "%s words out of %s had multiple entries"%(m, len(dict))
     return m
 
-VERSION = re.compile("(?P<version>MADA|IMAN|SAMA|ARDICT|RAW):(?P<fixphontrans>\d+)")
+VERSION = re.compile("(?P<version>MADA|IMAN|SAMA|LDC|RAW):(?P<fixphontrans>\d+)")
 
 ##################################################################
 #                        Prolog stuff                            #
@@ -250,7 +254,7 @@ def genPrologPromptsFromPhones(dest, name, prompts, N=sys.maxint):
     for i, prompt in enumerate(prompts):
         if i == N:
             break
-        text = " ".join(word[DIACRITICS] for word in prompts[prompt][2:-1])
+        text = " ".join(word[DIACRITICS].replace(" ", "") for word in prompts[prompt][2:-1])
         if not text == '':
             s += 'sentence("%s", "%s"),\n'%(prompt, text)
     s = s[:-2]+"].\n"
@@ -622,68 +626,6 @@ def wordsmlf(d, prompts, words="words.mlf"):
 %s
 .
 """%(pform, "\n".join(w[FORM] for w in prompt[1:])))
-    
-def fixRAWPrompts(dest="EXPT", ardictfile="ar-ar_lexicon_2014-03-17.txt", prompts=False, sep="\n", N=sys.maxint, pattern=False, fixphontrans=0, useProlog=0):
-    xdict = {"!ENTER":"sil", "!EXIT":"sil", "sp":"sil"}
-    for prompt in prompts:
-        sentence = prompts[prompt]
-        prompt1 = sentence[:2]
-        for word in sentence[2:-1]:
-            form = word[FORM]
-            transcription = " ".join(form.replace("-", ""))
-            xdict[form] = [transcription]
-            prompt1.append([word[0], transcription])
-        prompt1.append(sentence[-1])
-        prompts[prompt] = prompt1
-    return xdict
-    
-def fixARDICTPrompts(dest="EXPT", ardictfile="ar-ar_lexicon_2014-03-17.txt", prompts=False, sep="\n", N=sys.maxint, pattern=False, fixphontrans=0, useProlog=0):
-    ardict = {}
-    for line in open(ardictfile):
-        line = line.strip()
-        if not (line == "" or line.startswith("#")):
-            line = HTKFriendly(line)
-            word, wphones = line.split(" ", 1)
-            wphones = fixPhonTrans(wphones, fixphontrans)
-            try:
-                ardict[word].append(wphones)
-            except:
-                ardict[word] = [wphones]
-    print "ARDICT contains %s words"%(len(ardict))
-    known = {}
-    unknown = {}
-    xdict = {"!ENTER":"sil", "!EXIT":"sil", "sp":"sil"}
-    if useProlog:
-        prompts = prologprep(dest, "MADA-%s"%(fixphontrans), prompts)
-    for prompt in prompts:
-        sentence = prompts[prompt]
-        prompt1 = sentence[:2]
-        for word in sentence[2:-1]:
-            form = word[FORM]
-            try:
-                transcription = ardict[form][0]
-                xdict[form] = ardict[form]
-                incTable(form, known)
-            except:
-                transcription = " ".join(HTKFriendly(form.replace("-", "")))
-                xdict[form] = [transcription]
-                incTable(form, unknown)
-            prompt1.append([word[0], transcription])
-        prompt1.append(sentence[-1])
-        prompts[prompt] = prompt1
-    print "%s distinct words were present in ARDICT, %s were missing (%.2f); %s known tokens, %s unknown tokens (%.2f))"%(len(known), len(unknown), float(len(unknown))/float(len(known)+len(unknown)), sum(known.values()), sum(unknown.values()), float(sum(unknown.values()))/float(sum(known.values())+sum(unknown.values())))
-    return xdict
-
-def rawMada2Diacritics(l):
-    return [(" ").join(w.diacritics for w in s) for s in l]
-
-def containsDash(s):
-    return "-" in " ".join(s.split()[2:-1])
-
-def findDashes(rawmada):
-    for s in rawMada2Diacritics(rawmada):
-        if containsDash(s):
-            print 'playPrompt("%s")'%(s)
 
 def playPrompt(s, d="TEMP/wav"):
     try:
@@ -692,14 +634,6 @@ def playPrompt(s, d="TEMP/wav"):
         print "'%s' doesn't start with the name of a prompt"%(s)
         return
     segments.sounds.play(os.path.join(d, "%s.wav"%(f)))
-    
-def praatPrompt(s, d="TEMP/wav"):
-    try:
-        f = re.compile(".*(?P<fname>test-\S*).*").match(s).group("fname")
-    except:
-        print "'%s' doesn't start with the name of a prompt"%(s)
-        return
-    execute("Praat --open %s"%(os.path.join(d, "%s.wav"%(f))))
             
 hawPrefix = re.compile("(?P<prefix>((f|w) a )?((k a|b i) )?(A l )?).+")
 def hamzalwasl(s0):
@@ -730,14 +664,17 @@ FIXCASEMARKERS = 4
 FIXSHADDA = 8
 FIXSUKUNS = 16
 FIXHAMZAS = 32
+FIXMOST = FIXCASEMARKERS+FIXSHADDA+FIXSUKUNS+FIXHAMZAS
 FIXALL = FIXSV+FIXHAMZALWASL+FIXCASEMARKERS+FIXSHADDA+FIXSUKUNS+FIXHAMZAS
 BASE = 64
-
-"""
-FIXCASEMARKERS doesn't seem to be removing casemarkers
-"""
+REMSHADDA = 128
 
 def fixPhonTrans(text0, fixphontrans):
+    """
+    Just replace LDC's hamza by ours: might as well just always do that -- has no
+    significance, but it means that we can use Iman's rules with LDC transcriptions
+    """
+    text0 = text0.replace("G", "O")
     if fixphontrans & BASE:
         text0 = re.compile("\s(a|i|o|u|~|(F|K|N)$)").sub("", text0)
     if fixphontrans & (FIXHAMZAS | BASE):
@@ -757,6 +694,8 @@ def fixPhonTrans(text0, fixphontrans):
     s = text0
     if fixphontrans & FIXSHADDA:
         text0 = shaddaPattern.sub("\g<c> \g<c>", text0)
+    if fixphontrans & REMSHADDA:
+        text0 = text0.replace(" ~", "")
     """
     replace c0 i y c1 by c0 II c1: might interact weirdly with 
     what we do with shadda if actually we just delete the shadda
@@ -775,16 +714,101 @@ def fixPhonTrans(text0, fixphontrans):
     """
     # text0 = text0.replace("p", "h")
     return text0
+  
+
+def unique(l0):
+    l1 = []
+    seen = set()
+    for x in l0:
+        if not x in seen:
+            l1.append(x)
+            seen.add(x)
+    return l1
+
+def fixRAWPrompts(dest="EXPT", ardictfile="ar-ar_lexicon_2014-03-17.txt", prompts=False, sep="\n", N=sys.maxint, pattern=False, fixphontrans=0, useProlog=0):
+    xdict = {"!ENTER":"sil", "!EXIT":"sil", "sp":"sil"}
+    for prompt in prompts:
+        sentence = prompts[prompt]
+        for word in sentence[2:-1]:
+            word[FORM] = HTKFriendly(word[FORM])
+            form = word[FORM]
+            transcription = " ".join(HTKFriendly(form.replace("-", "")))
+            xdict[form] = [transcription]
+            word[1] = transcription
+    return xdict
+
+"""
+The prompts start life as old style BW, because that's what we need
+for SAMA, and it's easier to convert from old to new than to be
+confident that we can convert back from new to old. But the LDC
+dictionary needs new style, so we need to do the conversion at the
+right points in here. We also need to do HTKFriendly on the
+transcriptions that we retrieve, and then we have to get rid of "U" in
+the retrieved transcriptions, because it's pretty rare and we don't
+believe in it anyway.
+"""
+def readLDCDict(ldcdictfile="ar-ar_lexicon_2014-03-17.txt", fixphontrans=0):
+    ldcdict = {}
+    for line in open(ldcdictfile):
+        line = line.strip()
+        if not (line == "" or line.startswith("#")):
+            word, wphones = line.split(" ", 1)
+            wphones = HTKFriendly(fixPhonTrans(wphones, fixphontrans))
+            word = HTKFriendly(word)
+            try:
+                ldcdict[word].append(wphones)
+            except:
+                ldcdict[word] = [wphones]
+    return ldcdict
+
+def fixLDCPrompts(dest="EXPT", ldcdictfile="ar-ar_lexicon_2014-03-17.txt", prompts=False, sep="\n", N=sys.maxint, pattern=False, fixphontrans=0, useProlog=0):
+    ldcdict = readLDCDict(ldcdictfile=ldcdictfile, fixphontrans=fixphontrans)
+    print "LDC contains %s words"%(len(ldcdict))
+    known = {}
+    unknown = {}
+    xdict = {"!ENTER":"sil", "!EXIT":"sil", "sp":"sil"}
+    for prompt in prompts:
+        sentence = prompts[prompt]
+        prompt1 = sentence[:2]
+        for word in sentence[2:-1]:
+            word[FORM] = HTKFriendly(word[FORM]).replace("-", "")
+            form = word[FORM]
+            try:
+                transcription = ldcdict[form][0]
+                incTable(form, known)
+                xdict[form] = ldcdict[form]
+            except:
+                transcription = " ".join(HTKFriendly(form.replace("-", "")))
+                incTable(form, unknown)
+                try:
+                    xdict[form].append(transcription)
+                except:
+                    xdict[form] = [transcription]
+            prompt1.append([word[0], transcription])
+        prompt1.append(sentence[-1])
+        prompts[prompt] = prompt1
+    if useProlog:
+        prompts = prologprep(dest, "LDC-%s"%(fixphontrans), prompts, useProlog=useProlog)
+        for prompt in prompts:
+            sentence0 = prompts[prompt]
+            sentence1 = sentence0[:2]
+            for w in sentence0[2:-1]:
+                xdict[w[0]] = [w[1]]
+    else:
+        for k in xdict:
+            if k in ldcdict:
+                for t in ldcdict[k]:
+                    if not t in xdict[k]:
+                        xdict[k].append(t)
+    print "%s distinct words were present in LDC, %s were missing (%.2f); %s known tokens, %s unknown tokens (%.2f))"%(len(known), len(unknown), float(len(unknown))/float(len(known)+len(unknown)), sum(known.values()), sum(unknown.values()), float(sum(unknown.values()))/float(sum(known.values())+sum(unknown.values())))
+    return xdict
 
 MFORM = 0
 MPHONES = 1
 def fixMadaPrompts(dest="EXPT", prompts=False, fixphontrans=0, useProlog=0):
-    """ 
-    Read it as UTF-8, split it into SENTENCEs
-    """
+    known = {}
+    unknown = {}
     xdict = {"!ENTER":"sil", "!EXIT":"sil", "sp":"sil"}
-    if useProlog:
-        prompts = prologprep(dest, "MADA-%s"%(fixphontrans), prompts)
     for prompt in prompts:
         sentence0 = prompts[prompt]
         sentence1 = sentence0[:2]
@@ -792,38 +816,56 @@ def fixMadaPrompts(dest="EXPT", prompts=False, fixphontrans=0, useProlog=0):
             form = HTKFriendly(str(buck.uni2buck(w[FORM])))
             phones = fixPhonTrans(" ".join(str(HTKFriendly(w[DIACRITICS]))), fixphontrans)
             sentence1.append([form, phones])
-            xdict[form] = [phones]
         sentence1.append(sentence0[-1])
         prompts[prompt] = sentence1
+    if useProlog:
+        prompts = prologprep(dest, "MADA-%s"%(fixphontrans), prompts, useProlog=useProlog)
+    for prompt in prompts:
+        sentence0 = prompts[prompt]
+        sentence1 = sentence0[:2]
+        for w in sentence0[2:-1]:
+            xdict[w[0]] = [w[1]]
     return xdict
+
+def new2old(s):
+    new2old = {"W":"&", "I":"<", "O":">"}
+    for x in new2old:
+        s = s.replace(x, new2old[x])
+    return s
+
+def old2new(s):
+    new2old = {"&":"W", "<":"I", ">":"O"}
+    for x in new2old:
+        s = s.replace(x, new2old[x])
+    return s
 
 def fixSAMAPrompts(dest="EXPT", prompts=False, fixphontrans=0, useProlog=0):
     known = {}
     unknown = {}
-    simpleprefix = re.compile("(?P<prefix>(Al)?)A(?P<rest>.*)")
+    simpleprefix = re.compile("(?P<prefix>(Al)?)(I|O|W)(?P<rest>.*)")
     undiacriticise = re.compile("a|i|o|u|~|F|N|K")
     xdict = {"!ENTER":"sil", "!EXIT":"sil", "sp":"sil"}
     for prompt in prompts:
         sentence0 = prompts[prompt]
         sentence1 = sentence0[:2]
         for w in sentence0[2:-1]:
-            form = undiacriticise.sub("", w[DIACRITICS])
+            form = w[0]
             solutions = pya.getSolutions(form)
-            m = simpleprefix.match(form)
-            if m:
-                s1 = pya.getSolutions(m.group("prefix")+"<"+m.group("rest"))
-                s2 = pya.getSolutions(m.group("prefix")+">"+m.group("rest"))
-                solutions = solutions or s1 or s2
-            if solutions:
-                solutions = [solution.buckvoc for solution in solutions]
+            if solutions == []:
+                incTable(form, unknown)
+                solutions = [form.replace("-", "")]
             else:
-                solutions = [form]
-            solutions = [fixPhonTrans(" ".join(str(HTKFriendly(solution))), fixphontrans) for solution in solutions]
+                solutions = [solution.buckvoc for solution in solutions]
+                incTable(form, known)
+            solutions = unique([fixPhonTrans(" ".join(str(HTKFriendly(solution))), fixphontrans) for solution in solutions])
             form = HTKFriendly(form)
             sentence1.append([form, solutions[0]])
             xdict[form] = solutions
         sentence1.append(sentence0[-1])
         prompts[prompt] = sentence1
+    if useProlog:
+        prompts = prologprep(dest, "SAMA-%s"%(fixphontrans), prompts, useProlog=useProlog)
+    print "%s distinct words were recognised by SAMA, %s were missing (%.2f); %s known tokens, %s unknown tokens (%.2f))"%(len(known), len(unknown), float(len(unknown))/float(len(known)+len(unknown)), sum(known.values()), sum(unknown.values()), float(sum(unknown.values()))/float(sum(known.values())+sum(unknown.values())))
     return xdict
 
 def prompts2Phones(src, dest, prompts1, sep="\n"):
@@ -847,7 +889,7 @@ def prompts2Phones(src, dest, prompts1, sep="\n"):
             id = "*/%s"%(id)
         phones0 += '"%s.lab"\nsil'%(id)
         phones1 += '"%s.lab"\nsil'%(id)
-        for formphones in sentence1[1:]:
+        for formphones in sentence1[2:-1]:
             form = formphones[MFORM]
             phones = space.sub(" ", formphones[MPHONES].strip())
             for p in phones.split(" "):
@@ -900,21 +942,27 @@ def fixflags(d):
 
 def splitTraining(training, S=10000):
     print "splitTraining %s S=%s"%(training, S)
-    t = open(training).read().split("\n")
+    t = [l.strip() for l in open(training).read().split("\n") if not l.strip() == ""]
     if len(t) > S:
         print "Splitting training into subsections to allow us to handle large training sets"
     i = 0
     while len(t) > 0:
         i += 1
         out = "%s%s.scp"%(training.split(".")[0], i)
-        lines = "\n".join(t[:S]).strip()
+        lines = "\n".join(t[:S])
         if len(lines) > 0:
-            print "Writing %s lines (actually %s text lines) to %s"%(len(t[:S]), len(lines), out)
+            print "Writing %s lines to %s"%(len(t[:S]), out)
             with safeout(out) as write:
                 write("%s\n"%(lines))
         t = t[S:]
 
 PROMPTNAME = re.compile("(.*/)?(?P<promptname>\S*)")
+
+def countWords(prompts):
+    t = 0
+    for prompt in prompts:
+        t += len(prompts[prompt])-3
+    return t
 
 def checkLength(prompts, destwavpath):
     t = 0.0
@@ -1075,9 +1123,9 @@ def checkDictAgainstPhones(xdict, phones):
     
 def initDictsAndPrompts(src, dest, version, fixphontrans, useProlog, testprompts, trainingprompts, N):
     print "VERSION %s, FIXPHONTRANS %s"%(version, fixphontrans)
-    if version == "ARDICT":
-        phondict1 = fixARDICTPrompts(dest=dest, prompts=trainingprompts, fixphontrans=fixphontrans, useProlog=useProlog)
-        tdict0 = fixARDICTPrompts(dest=dest, prompts=testprompts, fixphontrans=fixphontrans, useProlog=useProlog)
+    if version == "LDC":
+        tdict0 = fixLDCPrompts(dest=dest, prompts=testprompts, fixphontrans=fixphontrans, useProlog=useProlog)
+        phondict1 = fixLDCPrompts(dest=dest, prompts=trainingprompts, fixphontrans=fixphontrans, useProlog=useProlog)
     elif version == "SAMA":
         phondict1 = fixSAMAPrompts(dest=dest, prompts=trainingprompts, fixphontrans=fixphontrans, useProlog=useProlog)
         tdict0 = fixSAMAPrompts(dest=dest, prompts=testprompts, fixphontrans=fixphontrans, useProlog=useProlog)
@@ -1093,14 +1141,11 @@ def initDictsAndPrompts(src, dest, version, fixphontrans, useProlog, testprompts
         phondict1[k] = tdict0[k]
     phondict0 = {}
     for k in phondict1:
-        phondict0[k] = phondict1[k][:1]
+        phondict0[k] = phondict1[k]
     phones = set()
     for transcriptions in phondict0.values():
         for phone in transcriptions[0]:
             phones.add(phone)
-    print "Checking for dictionary entries with rare phones (slow, often unnecessary, but need to do it for peace of mind)"
-    checkDictAgainstPhones(phondict1, phones)
-    checkDictAgainstPhones(tdict0, phones)
     prompts2Phones(src, dest, trainingprompts.values()+testprompts.values())
     return phondict0, phondict1, tdict0
               
@@ -1131,9 +1176,9 @@ def dataprep(src, dest, expt=False, prompts="originalprompts.txt", makeGrammar=m
         testprompts, trainingprompts = getprompts(src, dest, madafiles, wav, testpattern, trainingpattern, minutterances, N, srcwavpath, destwavpath)
     getWavFiles(srcwavpath, destwavpath, testprompts)
     getWavFiles(srcwavpath, destwavpath, trainingprompts)
-    print "length of recordings for testing %.2f"%(checkLength(testprompts, destwavpath)/60.0)
+    print "length of recordings for testing %.2f (%s words)"%(checkLength(testprompts, destwavpath)/60.0, countWords(testprompts))
     trainingtime = checkLength(trainingprompts, destwavpath)/60.0
-    print "length of recordings for training %.2f"%(trainingtime)
+    print "length of recordings for training %.2f (%s words)"%(trainingtime, countWords(trainingprompts))
     mfcdir="mfc-%s"%(useconfig.__name__)
     allprompts = "allprompts"
     training = "training.txt"
@@ -1206,7 +1251,9 @@ def train(d='EXPT', expt=False, training='training.scp', testing='testing.scp', 
     i += 2
     testdict = "testdict-1.txt"
     print "TRAINING WITH MONOPHONES1 (i.e. with short pauses this time): %s rounds"%(rounds)
-    for i in range(i, i+rounds+(0 if multiStage=="yes" else rounds+2)): # range(6, 8)
+    inc = 0 if multiStage=="yes" else 2
+    inc = 0
+    for i in range(i, i+rounds+inc): # range(6, 8)
         lastdict = "dict-%s-%s-1.txt"%(version, N)
         if HERest(d, i, 1):
             test(d, hmm="hmm%s"%(i), hmmlist="monophones1", lexicon=testdict, N=localtests)
@@ -1652,11 +1699,11 @@ def experiment(src="SRC", dest="TEST", prompts="", dicts=["multi", "fixed"], pro
     stages = enlist(stages)
     forcedAlignment = enlist(forcedAlignment)
     configs = enlist(configs)
+    maintests = enlist(maintests)
     N = enlist(N)
     experiments = []
     clean(dest)
     global MAXTEST
-    MAXTEST = maintests
     for useconfig in configs:
         for useFixedDict in dicts: 
             for useForcedAlignment in forcedAlignment:
@@ -1678,11 +1725,12 @@ def experiment(src="SRC", dest="TEST", prompts="", dicts=["multi", "fixed"], pro
                             except:
                                 pass
                             for n in N:
-                                print "#### EXPERIMENT %s ########"%(fixflags({"useProlog":useProlog, "version":version, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment, "N":n, "config":useconfig.__name__}))
-                                clean(dest)
-                                experiments.append(EXPERIMENT(src, dest, prompts, version, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit, testpattern=testpattern, trainingpattern=trainingpattern, savetestset=savetestset))
-                                if len(experiments[-1].training) < n:
-                                    break
+                                for MAXTEST in maintests:
+                                    print "#### EXPERIMENT %s ########"%(fixflags({"useProlog":useProlog, "version":version, "useFixedDict":useFixedDict, "multiStage":multiStage, "useForcedAlignment":useForcedAlignment, "N":n, "config":useconfig.__name__}))
+                                    clean(dest)
+                                    experiments.append(EXPERIMENT(src, dest, prompts, version, useProlog, useFixedDict, useconfig, makeGrammar, useForcedAlignment, localtests, multiStage=multiStage, N=n, quit=quit, testpattern=testpattern, trainingpattern=trainingpattern, savetestset=savetestset))
+                                    if len(experiments[-1].training) < n:
+                                        break
     return experiments
 
 class EXPERIMENT:
